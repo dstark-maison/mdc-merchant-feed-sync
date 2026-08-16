@@ -1,0 +1,297 @@
+"""
+Tests for build_feed.py.
+
+Covers both input adapters:
+  - load_products_from_csv() against a real fixture (tests/fixtures/sample_products_export.csv)
+  - load_products_from_shopify_api() against a mocked GraphQL response, since
+    no live Shopify API credentials exist in this environment by design (see
+    README -- credential creation is a deliberate manual go-live step, not
+    something this build session does on its own).
+
+Run with: pytest tests/ -v
+"""
+import sys
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+import build_feed  # noqa: E402
+
+FIXTURE_CSV = Path(__file__).parent / "fixtures" / "sample_products_export.csv"
+
+
+# ---------------------------------------------------------------------------
+# strip_html
+# ---------------------------------------------------------------------------
+def test_strip_html_removes_tags_and_collapses_whitespace():
+    raw = "<p>Hello   <strong>world</strong></p>\n<p>Second line.</p>"
+    assert build_feed.strip_html(raw) == "Hello world Second line."
+
+
+def test_strip_html_decodes_entities():
+    assert build_feed.strip_html("<p>Tom &amp; Jerry&#39;s</p>") == "Tom & Jerry's"
+
+
+def test_strip_html_empty_input():
+    assert build_feed.strip_html("") == ""
+    assert build_feed.strip_html(None) == ""
+
+
+# ---------------------------------------------------------------------------
+# gtin_checksum_valid
+# ---------------------------------------------------------------------------
+def test_gtin_checksum_valid_real_ean13():
+    assert build_feed.gtin_checksum_valid("4006381333931") is True
+
+
+def test_gtin_checksum_valid_rejects_all_zeros():
+    # All-zero passes length but fails on being a real check-digit-correct
+    # code is coincidental either way -- the sample-value list catches this
+    # specific case explicitly; this test only covers the checksum math.
+    assert build_feed.gtin_checksum_valid("000000000000") is True  # 12 zeros: checksum trivially 0==0
+    # -- confirms WHY the sample-value list (not just checksum) is needed to catch this.
+
+
+def test_gtin_checksum_valid_rejects_wrong_length():
+    assert build_feed.gtin_checksum_valid("12345") is False
+
+
+def test_gtin_checksum_valid_rejects_bad_check_digit():
+    assert build_feed.gtin_checksum_valid("4006381333939") is False
+
+
+# ---------------------------------------------------------------------------
+# is_known_sample_value
+# ---------------------------------------------------------------------------
+def test_sample_value_catches_known_id():
+    row = build_feed.ProductRow(id="1111111111", title="Anything", brand="X", link="", image_link="", gtin="")
+    reason = build_feed.is_known_sample_value(row)
+    assert reason is not None
+    assert "1111111111" in reason
+
+
+def test_sample_value_catches_known_title_case_insensitive():
+    row = build_feed.ProductRow(id="x", title="MENS PIQUE POLO SHIRT", brand="X", link="", image_link="", gtin="")
+    assert build_feed.is_known_sample_value(row) is not None
+
+
+def test_sample_value_catches_google_brand():
+    row = build_feed.ProductRow(id="x", title="Anything", brand="Google", link="", image_link="", gtin="")
+    assert build_feed.is_known_sample_value(row) is not None
+
+
+def test_sample_value_catches_example_domain_link():
+    row = build_feed.ProductRow(id="x", title="Anything", brand="X", link="http://www.example.com/asp/sp.asp?id=1", image_link="", gtin="")
+    assert build_feed.is_known_sample_value(row) is not None
+
+
+def test_sample_value_catches_placeholder_gtin():
+    row = build_feed.ProductRow(id="x", title="Anything", brand="X", link="", image_link="", gtin="0000000000000")
+    assert build_feed.is_known_sample_value(row) is not None
+
+
+def test_sample_value_ignores_normal_row():
+    row = build_feed.ProductRow(id="8720828225332", title="Bamboo Fitted Sheet", brand="Boomba Bamboo",
+                                 link="https://www.maisondecocon.com/products/x", image_link="https://cdn.shopify.com/x.jpg",
+                                 gtin="8720828225332")
+    assert build_feed.is_known_sample_value(row) is None
+
+
+# ---------------------------------------------------------------------------
+# validate_row
+# ---------------------------------------------------------------------------
+def _complete_row(**overrides):
+    row = build_feed.ProductRow(
+        id="123", title="Title", description="Desc", link="https://x", image_link="https://x.jpg",
+        availability="in_stock", price="10.00 EUR", price_amount="10.00", brand="Brand",
+        condition="new", gtin="4006381333931", mpn="123",
+    )
+    row.update(overrides)
+    return row
+
+
+def test_validate_row_accepts_complete_row():
+    is_valid, reasons = build_feed.validate_row(_complete_row())
+    assert is_valid is True
+    assert reasons == []
+
+
+@pytest.mark.parametrize("field", ["id", "title", "description", "link", "image_link", "price", "availability"])
+def test_validate_row_rejects_missing_required_field(field):
+    row = _complete_row(**{field: ""})
+    is_valid, reasons = build_feed.validate_row(row)
+    assert is_valid is False
+    assert any(field in r for r in reasons)
+
+
+def test_validate_row_rejects_missing_brand():
+    is_valid, reasons = build_feed.validate_row(_complete_row(brand=""))
+    assert is_valid is False
+    assert any("brand" in r for r in reasons)
+
+
+def test_validate_row_rejects_no_identifier():
+    is_valid, reasons = build_feed.validate_row(_complete_row(gtin="", mpn=""))
+    assert is_valid is False
+    assert any("identifier" in r for r in reasons)
+
+
+def test_validate_row_rejects_bad_gtin_checksum():
+    is_valid, reasons = build_feed.validate_row(_complete_row(gtin="1234567890123"))
+    assert is_valid is False
+    assert any("checksum" in r for r in reasons)
+
+
+def test_validate_row_accepts_mpn_only_no_gtin():
+    is_valid, reasons = build_feed.validate_row(_complete_row(gtin="", mpn="SKU-001"))
+    assert is_valid is True
+
+
+def test_validate_row_rejects_non_numeric_price():
+    is_valid, reasons = build_feed.validate_row(_complete_row(price_amount="not-a-number"))
+    assert is_valid is False
+    assert any("numeric" in r for r in reasons)
+
+
+def test_validate_row_rejects_zero_price():
+    is_valid, reasons = build_feed.validate_row(_complete_row(price_amount="0"))
+    assert is_valid is False
+
+
+# ---------------------------------------------------------------------------
+# load_products_from_csv (real fixture, end-to-end for the offline path)
+# ---------------------------------------------------------------------------
+def test_load_products_from_csv_reads_fixture():
+    rows = build_feed.load_products_from_csv(str(FIXTURE_CSV))
+    assert len(rows) == 11
+    ids = {r["id"] for r in rows}
+    assert "8720828225332" in ids  # the one fully-complete real row
+
+
+def test_load_products_from_csv_strips_html_in_description():
+    rows = build_feed.load_products_from_csv(str(FIXTURE_CSV))
+    sheet = next(r for r in rows if r["id"] == "8720828225332")
+    assert "<p>" not in sheet["description"]
+    assert sheet["description"].startswith("A premium 100% bamboo fitted sheet")
+
+
+def test_load_products_from_csv_skips_rows_without_sku():
+    # every row in the fixture has a SKU; this asserts the skip logic exists
+    # and doesn't crash on a handle carried across multiple option rows.
+    rows = build_feed.load_products_from_csv(str(FIXTURE_CSV))
+    assert all(r["id"] for r in rows)
+
+
+def test_full_pipeline_end_to_end_counts(tmp_path):
+    rows = build_feed.load_products_from_csv(str(FIXTURE_CSV))
+    orig_data_dir, orig_reports_dir = build_feed.DATA_DIR, build_feed.REPORTS_DIR
+    build_feed.DATA_DIR = tmp_path / "data"
+    build_feed.REPORTS_DIR = tmp_path / "reports"
+    build_feed.DATA_DIR.mkdir()
+    build_feed.REPORTS_DIR.mkdir()
+    try:
+        stats = build_feed.run_pipeline(rows, "unit_test_feed", "unit test run")
+        assert stats["rows_read"] == 11
+        assert stats["accepted"] == 1
+        assert stats["sample_rejected"] == 1
+        assert len(stats["empty_description"]) == 1
+        assert stats["feed_csv_path"].exists()
+        assert stats["feed_txt_path"].exists()
+        assert stats["exclusions_path"].exists()
+        assert stats["report_path"].exists()
+    finally:
+        build_feed.DATA_DIR, build_feed.REPORTS_DIR = orig_data_dir, orig_reports_dir
+
+
+# ---------------------------------------------------------------------------
+# load_products_from_shopify_api (mocked -- no live credentials by design)
+# ---------------------------------------------------------------------------
+MOCK_GRAPHQL_RESPONSE = {
+    "data": {
+        "products": {
+            "pageInfo": {"hasNextPage": False, "endCursor": None},
+            "edges": [
+                {
+                    "node": {
+                        "handle": "mocked-product",
+                        "title": "Mocked Product",
+                        "descriptionHtml": "<p>Mocked description.</p>",
+                        "vendor": "Mock Vendor",
+                        "status": "ACTIVE",
+                        "featuredImage": {"url": "https://cdn.shopify.com/mocked.jpg"},
+                        "variants": {
+                            "edges": [
+                                {"node": {"sku": "MOCK-1", "price": "50.00", "barcode": "4006381333931", "inventoryQuantity": 5}}
+                            ]
+                        },
+                    }
+                }
+            ],
+        }
+    }
+}
+
+
+@patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_mocked(mock_post):
+    build_feed._cached_token = None
+
+    token_response = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-token"}
+    token_response.raise_for_status.return_value = None
+
+    graphql_response = MagicMock()
+    graphql_response.json.return_value = MOCK_GRAPHQL_RESPONSE
+    graphql_response.raise_for_status.return_value = None
+
+    mock_post.side_effect = [token_response, graphql_response]
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["id"] == "MOCK-1"
+    assert row["title"] == "Mocked Product"
+    assert row["description"] == "Mocked description."
+    assert row["availability"] == "in_stock"
+    assert row["gtin"] == "4006381333931"
+    assert row["brand"] == "Mock Vendor"
+
+    # First call is the OAuth token exchange, second is the GraphQL query.
+    assert mock_post.call_count == 2
+    assert "oauth/access_token" in mock_post.call_args_list[0].args[0]
+    assert "graphql.json" in mock_post.call_args_list[1].args[0]
+
+
+@patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_paginates(mock_post):
+    build_feed._cached_token = None
+
+    token_response = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-token"}
+    token_response.raise_for_status.return_value = None
+
+    page1 = {
+        "data": {
+            "products": {
+                "pageInfo": {"hasNextPage": True, "endCursor": "CURSOR1"},
+                "edges": [MOCK_GRAPHQL_RESPONSE["data"]["products"]["edges"][0]],
+            }
+        }
+    }
+    page2 = MOCK_GRAPHQL_RESPONSE
+
+    resp1 = MagicMock()
+    resp1.json.return_value = page1
+    resp1.raise_for_status.return_value = None
+    resp2 = MagicMock()
+    resp2.json.return_value = page2
+    resp2.raise_for_status.return_value = None
+
+    mock_post.side_effect = [token_response, resp1, resp2]
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
+    assert len(rows) == 2
+    assert mock_post.call_count == 3

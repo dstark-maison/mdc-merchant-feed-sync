@@ -1,0 +1,28 @@
+name: Merchant feed weekly digest
+
+on:
+  # GO-LIVE STEP 2 of 2: uncomment once build-feed.yml's daily schedule is
+  # also live and has run for at least a few days -- a weekly digest of zero
+  # daily reports isn't useful. See README "Go-live checklist".
+  #
+  # schedule:
+  #   - cron: "0 7 * * 1"  # 07:00 UTC every Monday
+  workflow_dispatch: {}  # manual trigger only, for now
+
+jobs:
+  weekly-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Send weekly digest via Resend
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: python send_weekly_report.py --send
