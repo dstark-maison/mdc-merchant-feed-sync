@@ -75,14 +75,40 @@ https://raw.githubusercontent.com/dstark-maison/mdc-merchant-feed-sync/master/da
 3. ~~Decide feed hosting~~ Done: Option A (public repo, raw URL) -- see above.
 4. ~~Uncomment the `schedule:` blocks~~ Done in both workflows.
 5. **Configure the Merchant Center scheduled fetch** -- the one remaining
-   manual step, UI-only: Merchant Center → Settings → Data sources → find
-   the existing manual-upload source → edit it (do **not** create a new
-   source) → change its method to **Scheduled fetch** → enter the URL above
-   → File format: **Comma-separated (CSV)** → Fetch frequency: Daily →
-   Fetch time: any time after 06:05 UTC. Editing the *existing* source (not
-   creating a new one) is what makes the next successful fetch fully replace
-   the manually-uploaded product set -- see the "Retiring the manual CSV"
-   section for why this matters.
+   manual step, UI-only (confirmed by walking the actual UI on 2026-08-21;
+   it does **not** match the generic "edit an existing source's schedule"
+   flow some Google help docs describe -- this account's data-sources UI has
+   no method-switch option on an existing source, only re-upload/SFTP or
+   delete):
+   1. Merchant Center → Settings → Data sources → **Add product source**
+   2. Choose **"Add products from a file"** (not "Connect to Shopify" --
+      see note below on why)
+   3. Leave **"Enter a link to your file"** selected → paste:
+      `https://raw.githubusercontent.com/dstark-maison/mdc-merchant-feed-sync/master/data/google_merchant_feed.csv`
+   4. **Edit schedule** → Daily, any time after 06:05 UTC (the wizard's
+      schedule editor uses your account's local timezone, not UTC --
+      convert accordingly)
+   5. **Add authentication information** → leave as "No username and
+      password provided" (the URL is public, no auth needed)
+   6. Continue through the rest of the wizard: Countries **Germany**,
+      Language **English**, Feed label **DE** -- same values as the
+      existing manual source, so it's a like-for-like replacement
+   7. Finish creating the source, then let it run its first fetch
+   8. **Once the new source shows ~224 products** (confirms it successfully
+      pulled and took over), delete the old `google_merchant_feed.csv`
+      (File, manual) source: Data sources → its row's **⋮ Actions** menu →
+      **Delete source**. See "Retiring the manual CSV upload" below for why
+      deleting only after confirming the new source works avoids any gap.
+
+   **Note on "Connect to Shopify":** the wizard's first, pre-selected option
+   is Google's own native Shopify connector (via the already-installed
+   "Google & YouTube" Shopify sales channel app) -- it would auto-sync
+   products with zero custom pipeline. This repo exists specifically because
+   the native connector doesn't give you the validation gate / sample-data
+   reject / description-mapping control this pipeline enforces (the root
+   cause of the original Misrepresentation suspension). Worth knowing this
+   option exists, but switching to it would undo the safeguards this repo
+   was built for -- not recommended without a deliberate decision to do so.
 6. **Review the "genuinely empty body_html" list** that will appear in the
    first live report (`reports/YYYY-MM-DD.md`) -- these products need
    hand-written descriptions; the pipeline deliberately does not
@@ -107,22 +133,29 @@ python send_weekly_report.py --send                # actually calls Resend (need
 
 ## Retiring the manual CSV upload
 
-The feed currently live in Merchant Center was populated by a one-time manual
-CSV upload (the Layer 1 stopgap used to unblock the Misrepresentation
-review). Per Google's own documentation on data sources: changing a source's
-*ingestion method* (manual upload → scheduled fetch) does **not** create a
-new data source as long as you edit the existing one rather than adding a
-new "Add products from a file" entry -- it stays the same source, same feed
-label/ID. And critically: a data source's product set is fully replaced on
-each successful re-processing, whether that re-processing is another manual
-upload or a scheduled fetch -- any product that was in the old file but is
-absent from the new one is automatically removed, no separate deletion step
-needed. So: **edit the existing source's fetch method in place** (checklist
-step 5 above) rather than creating a second, parallel data source, and the
-first successful scheduled fetch will reconcile the product set on its own.
-No manual removal of the old manually-uploaded products is required or
-recommended (doing so via a separate route while the manual source still
-"owns" them could cause temporary gaps).
+The feed currently live in Merchant Center (22 products) was populated by a
+one-time manual CSV upload (`google_merchant_feed.csv`, File/manual, last
+updated Aug 13 2026 -- the Layer 1 stopgap used to unblock the
+Misrepresentation review). This session confirmed directly in the Merchant
+Center UI (2026-08-21) that an existing manual-upload source **cannot** be
+switched in place to scheduled fetch -- its only actions are re-upload,
+update via SFTP, or delete. So the plan is add-new-then-delete-old, not
+edit-in-place:
+
+1. Add the new scheduled-fetch source (checklist step 5 above) as a
+   *second*, separate data source.
+2. Per Google's documentation on data sources, when the same product ID
+   exists in more than one of your sources, it's considered to belong to
+   whichever source was **most recently updated** -- no duplicates are
+   created. Since the new source updates daily and the old manual one is
+   now frozen, ownership of the overlapping ~22 products transfers to the
+   new source on its very first successful fetch.
+3. Once the new source's product count reaches ~224 (confirms it's fully
+   live and has taken over), **delete the old manual `google_merchant_feed.csv`
+   source** (Data sources → its row's ⋮ menu → Delete source). Deleting it
+   only after confirming the new source works avoids any gap in coverage,
+   and is safe at that point -- the old source no longer owns any live
+   products by then.
 
 After the first scheduled fetch succeeds, verify in Merchant Center: product
 count matches the live catalog (224 products / 867 offers as of 2026-08-21),
@@ -137,7 +170,8 @@ feed's real descriptions get processed.
 - [x] Decide feed hosting (public repo + raw URL) and set it up
 - [x] Uncomment `schedule:` in `build-feed.yml`
 - [x] Uncomment `schedule:` in `weekly-report.yml`
-- [ ] Configure Merchant Center's scheduled fetch pointing at the hosted feed URL (manual UI step -- see "Feed hosting" above)
-- [ ] After the first scheduled fetch, verify product count and reconciliation (see "Retiring the manual CSV upload" above)
+- [ ] Configure Merchant Center's scheduled fetch pointing at the hosted feed URL (manual UI step -- see "One-time setup" step 5 above)
+- [ ] Delete the old manual-upload source once the new one shows ~224 products (see "Retiring the manual CSV upload" above)
+- [ ] After the first scheduled fetch, verify product count and reconciliation
 - [ ] Review and write copy for any products flagged with empty `body_html` (0 as of the first live run)
 - [ ] Separately (not this pipeline): expand return/shipping account coverage to AT/FR/BE/LU in Merchant Center if selling there
