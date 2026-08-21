@@ -298,6 +298,7 @@ query($cursor: String) {
         vendor
         status
         featuredImage { url }
+        translations(locale: "de") { key value }
         variants(first: 100) {
           edges {
             node {
@@ -318,7 +319,17 @@ query($cursor: String) {
 def load_products_from_shopify_api(shop_domain, client_id, client_secret):
     """Live pull: paginates products(status:active), flattens to one
     ProductRow per variant. Mirrors load_products_from_csv()'s output shape
-    exactly so the rest of the pipeline can't tell which adapter ran."""
+    exactly so the rest of the pipeline can't tell which adapter ran.
+
+    Feed label is DE and the feed's `link` is the storefront's bare URL,
+    which renders German by default (confirmed via hreflang: the bare URL
+    is hreflang="de", with /en/, /nl/, /fr/ as the other locales) -- so
+    title/description must come from the German translation, not the
+    admin's default-locale (English) fields, or the feed would describe a
+    page in a different language than the one it links to. No fallback to
+    English on a missing DE translation: better to let validate_row's
+    normal missing-field exclusion catch it than silently publish
+    mismatched-language content under feed label DE."""
     token = _get_access_token(shop_domain, client_id, client_secret)
     url = f"https://{shop_domain}/admin/api/{API_VERSION}/graphql.json"
     rows = []
@@ -338,7 +349,9 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret):
         for edge in block["edges"]:
             node = edge["node"]
             handle = node["handle"]
-            description = strip_html(node.get("descriptionHtml") or "")
+            de = {t["key"]: t["value"] for t in node.get("translations") or []}
+            title = de.get("title") or ""
+            description = strip_html(de.get("body_html") or "")
             image = (node.get("featuredImage") or {}).get("url", "") or ""
             for vedge in node["variants"]["edges"]:
                 v = vedge["node"]
@@ -351,7 +364,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret):
                 rows.append(ProductRow(
                     handle=handle,
                     id=sku,
-                    title=node["title"],
+                    title=title,
                     description=description,
                     link=f"https://{STORE_DOMAIN_PUBLIC}/products/{quote(handle)}?variant_sku={quote(sku)}",
                     image_link=image,

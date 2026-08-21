@@ -221,6 +221,10 @@ MOCK_GRAPHQL_RESPONSE = {
                         "vendor": "Mock Vendor",
                         "status": "ACTIVE",
                         "featuredImage": {"url": "https://cdn.shopify.com/mocked.jpg"},
+                        "translations": [
+                            {"key": "title", "value": "Mockiertes Produkt"},
+                            {"key": "body_html", "value": "<p>Mockierte Beschreibung.</p>"},
+                        ],
                         "variants": {
                             "edges": [
                                 {"node": {"sku": "MOCK-1", "price": "50.00", "barcode": "4006381333931", "inventoryQuantity": 5}}
@@ -253,8 +257,8 @@ def test_load_products_from_shopify_api_mocked(mock_post):
     assert len(rows) == 1
     row = rows[0]
     assert row["id"] == "MOCK-1"
-    assert row["title"] == "Mocked Product"
-    assert row["description"] == "Mocked description."
+    assert row["title"] == "Mockiertes Produkt"
+    assert row["description"] == "Mockierte Beschreibung."
     assert row["availability"] == "in_stock"
     assert row["gtin"] == "4006381333931"
     assert row["brand"] == "Mock Vendor"
@@ -295,3 +299,38 @@ def test_load_products_from_shopify_api_paginates(mock_post):
     rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
     assert len(rows) == 2
     assert mock_post.call_count == 3
+
+
+@patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_no_de_translation_leaves_fields_blank(mock_post):
+    """No fallback to the admin's English title/descriptionHtml when a DE
+    translation is missing -- feed label is DE, so a blank here should hit
+    validate_row's normal missing-field exclusion rather than silently
+    publish English content under feed label DE."""
+    build_feed._cached_token = None
+
+    token_response = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-token"}
+    token_response.raise_for_status.return_value = None
+
+    node = dict(MOCK_GRAPHQL_RESPONSE["data"]["products"]["edges"][0]["node"])
+    node["translations"] = []
+    response = {
+        "data": {
+            "products": {
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                "edges": [{"node": node}],
+            }
+        }
+    }
+    graphql_response = MagicMock()
+    graphql_response.json.return_value = response
+    graphql_response.raise_for_status.return_value = None
+
+    mock_post.side_effect = [token_response, graphql_response]
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
+
+    assert len(rows) == 1
+    assert rows[0]["title"] == ""
+    assert rows[0]["description"] == ""
