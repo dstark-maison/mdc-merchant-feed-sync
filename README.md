@@ -91,8 +91,10 @@ https://raw.githubusercontent.com/dstark-maison/mdc-merchant-feed-sync/master/da
    5. **Add authentication information** → leave as "No username and
       password provided" (the URL is public, no auth needed)
    6. Continue through the rest of the wizard: Countries **Germany**,
-      Language **English**, Feed label **DE** -- same values as the
-      existing manual source, so it's a like-for-like replacement
+      Language **German** (not English -- the old manual source had this
+      wrong; the feed's `link` is the storefront's bare URL, which renders
+      German by default, so title/description must be German to match --
+      fixed in the 2026-08-21 language-fix commit), Feed label **DE**
    7. Finish creating the source, then let it run its first fetch
    8. **Once the new source shows ~224 products** (confirms it successfully
       pulled and took over), delete the old `google_merchant_feed.csv`
