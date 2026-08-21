@@ -1,16 +1,9 @@
 name: Merchant feed daily build
 
 on:
-  # GO-LIVE STEP 1 of 2: uncomment the schedule block below once Daniel says
-  # go. Left out deliberately for now -- see README "Go-live checklist". A
-  # schedule trigger starts running the moment this file lands on the
-  # default branch, whether or not the required secrets exist yet, so it
-  # stays commented out rather than "present but expected to fail" to avoid
-  # noisy failure notifications before this is actually meant to run.
-  #
-  # schedule:
-  #   - cron: "0 6 * * *"  # 06:00 UTC daily, after cerda-sync's 05:00 UTC run
-  workflow_dispatch: {}  # manual trigger only, for now
+  schedule:
+    - cron: "0 6 * * *"  # 06:00 UTC daily, after cerda-sync's 05:00 UTC run
+  workflow_dispatch: {}  # also runnable manually from the Actions tab
 
 jobs:
   build:
