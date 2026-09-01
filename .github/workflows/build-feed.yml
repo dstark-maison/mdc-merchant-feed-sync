@@ -42,6 +42,13 @@ jobs:
           SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
         run: python build_feed.py --source shopify-api --market be-nl --out google_merchant_feed_be_nl
 
+      - name: Build English feed from live Shopify data
+        env:
+          SHOPIFY_STORE_DOMAIN: ${{ secrets.SHOPIFY_STORE_DOMAIN }}
+          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
+          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
+        run: python build_feed.py --source shopify-api --market en --out google_merchant_feed_en
+
       - name: Upload feed + report as artifact
         if: always()
         uses: actions/upload-artifact@v4

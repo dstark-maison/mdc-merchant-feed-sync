@@ -86,11 +86,27 @@ API_VERSION = "2025-01"
 # French content is for Belgian French-speakers; its MC data source must be
 # configured with target country Belgium, not France). Re-add France only
 # after confirming its Market is Active again.
+#
+# "primary": True (the "en" entry) marks a market whose locale is this
+# shop's PRIMARY locale (confirmed via shopLocales: en.primary == true).
+# Shopify never stores a translations() record for the primary locale --
+# translations(locale: "en") returns [] for every product, always, by
+# design, not because content is missing. Primary-locale content lives on
+# the resource's own base `title`/`descriptionHtml` fields instead. The
+# loader branches on this flag: primary markets read those base fields
+# directly and never set translation_missing (there is no "translation"
+# to be missing for the shop's own native-language content -- a blank
+# base field is a genuine content gap and flows through the ordinary
+# validate_row/empty_description path, same as CSV-sourced rows already
+# do). Getting this wrong would silently ship an empty "en" feed: every
+# row would read translation_missing=True and 0 products would be
+# accepted -- verified this would happen before adding "en" here.
 # ---------------------------------------------------------------------------
 MARKETS = {
     "de": {"locale": "de", "link_prefix": "", "countries": ["Germany", "Austria", "Luxembourg"]},
     "be-fr": {"locale": "fr", "link_prefix": "/fr", "countries": ["Belgium"]},
     "be-nl": {"locale": "nl", "link_prefix": "/nl", "countries": ["Belgium"]},
+    "en": {"locale": "en", "link_prefix": "/en", "countries": ["Germany", "Austria", "Belgium", "Luxembourg"], "primary": True},
 }
 
 # EU 2019/771 gives every EU consumer a minimum 2-year statutory conformity
@@ -373,11 +389,19 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
     instead of silently publishing blank or mismatched-language content.
     run_pipeline() excludes these and reports them as a distinct category
     (translation gap) separate from ordinary validation failures or from
-    "genuinely no content at all" (empty_description, the DE case)."""
+    "genuinely no content at all" (empty_description, the DE case).
+
+    Exception: a market flagged "primary" in MARKETS (currently "en", this
+    shop's primary locale) reads title/description from the product's own
+    base fields instead of translations(locale: ...) -- Shopify never
+    populates a translations() record for the primary locale, so that
+    lookup would always return empty and every row would be wrongly
+    flagged translation_missing. See the MARKETS comment for details."""
     if market not in MARKETS:
         raise ValueError(f"Unknown market '{market}' -- choices are {sorted(MARKETS)}")
     locale = MARKETS[market]["locale"]
     link_prefix = MARKETS[market]["link_prefix"]
+    is_primary = MARKETS[market].get("primary", False)
 
     token = _get_access_token(shop_domain, client_id, client_secret)
     url = f"https://{shop_domain}/admin/api/{API_VERSION}/graphql.json"
@@ -398,10 +422,15 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
         for edge in block["edges"]:
             node = edge["node"]
             handle = node["handle"]
-            tr = {t["key"]: t["value"] for t in node.get("translations") or []}
-            title = tr.get("title") or ""
-            description = strip_html(tr.get("body_html") or "")
-            translation_missing = not tr.get("title") or not tr.get("body_html")
+            if is_primary:
+                title = node.get("title") or ""
+                description = strip_html(node.get("descriptionHtml") or "")
+                translation_missing = False  # no translation concept for the primary locale
+            else:
+                tr = {t["key"]: t["value"] for t in node.get("translations") or []}
+                title = tr.get("title") or ""
+                description = strip_html(tr.get("body_html") or "")
+                translation_missing = not tr.get("title") or not tr.get("body_html")
             image = (node.get("featuredImage") or {}).get("url", "") or ""
             for vedge in node["variants"]["edges"]:
                 v = vedge["node"]

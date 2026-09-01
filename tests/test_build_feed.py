@@ -402,6 +402,70 @@ def test_load_products_from_shopify_api_flags_missing_translation_instead_of_bla
     assert rows[0]["translation_missing"] is True
 
 
+# ---------------------------------------------------------------------------
+# market support (English primary-locale expansion)
+# ---------------------------------------------------------------------------
+@patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_en_reads_base_fields_not_translations(mock_post):
+    """en is this shop's primary locale (confirmed via shopLocales) --
+    Shopify never populates a translations() record for it, so the en
+    market must read the base title/descriptionHtml fields instead. This
+    also confirms it works even when translations comes back empty, which
+    is the real, structural, every-single-time behavior for this locale
+    (not an occasional gap)."""
+    build_feed._cached_token = None
+
+    token_response = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-token"}
+    token_response.raise_for_status.return_value = None
+
+    node = dict(MOCK_GRAPHQL_RESPONSE["data"]["products"]["edges"][0]["node"])
+    node["translations"] = []  # real behavior for the primary locale, always
+    response = {"data": {"products": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "edges": [{"node": node}]}}}
+    graphql_response = MagicMock()
+    graphql_response.json.return_value = response
+    graphql_response.raise_for_status.return_value = None
+    mock_post.side_effect = [token_response, graphql_response]
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret", market="en")
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["title"] == "Mocked Product"  # base field, not the (empty) translation
+    assert row["description"] == "Mocked description."
+    assert row["link"].startswith("https://www.maisondecocon.com/en/products/")
+    assert row["translation_missing"] is False
+
+
+@patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_en_blank_base_title_not_flagged_as_translation_missing(mock_post):
+    """A genuinely blank base title/description under en must still fail
+    ordinary validate_row (missing required field), not get mislabeled as
+    a translation gap -- there's no translation concept for the primary
+    locale, so this has to flow through the normal exclusion path."""
+    build_feed._cached_token = None
+
+    token_response = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-token"}
+    token_response.raise_for_status.return_value = None
+
+    node = dict(MOCK_GRAPHQL_RESPONSE["data"]["products"]["edges"][0]["node"])
+    node["title"] = ""
+    node["descriptionHtml"] = ""
+    node["translations"] = []
+    response = {"data": {"products": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "edges": [{"node": node}]}}}
+    graphql_response = MagicMock()
+    graphql_response.json.return_value = response
+    graphql_response.raise_for_status.return_value = None
+    mock_post.side_effect = [token_response, graphql_response]
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret", market="en")
+
+    assert len(rows) == 1
+    assert rows[0]["title"] == ""
+    assert rows[0]["translation_missing"] is False
+
+
 def test_run_pipeline_excludes_and_reports_missing_translation_separately(tmp_path):
     row_ok = build_feed.ProductRow(
         id="OK-1", handle="ok-1", title="Titre", description="Desc", link="https://x",
