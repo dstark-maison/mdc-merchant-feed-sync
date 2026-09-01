@@ -13,6 +13,12 @@ Two input modes, one shared transform/validate/write pipeline:
                             Needs SHOPIFY_STORE_DOMAIN / SHOPIFY_CLIENT_ID /
                             SHOPIFY_CLIENT_SECRET set as env vars.
 
+--market <key>            (--source shopify-api only) Selects which market's
+                           locale to pull title/description in and which
+                           storefront link prefix to use -- see MARKETS.
+                           Each market is its own Merchant Center data
+                           source/output file. Default: de.
+
 Both modes produce the same normalized ProductRow list, which then goes
 through the SAME validate -> reject-known-samples -> write pipeline, so the
 two input paths can never silently diverge in behavior.
@@ -56,6 +62,36 @@ REPORTS_DIR.mkdir(exist_ok=True)
 
 STORE_DOMAIN_PUBLIC = "www.maisondecocon.com"  # storefront domain used in feed `link` values
 API_VERSION = "2025-01"
+
+# ---------------------------------------------------------------------------
+# Market targets this pipeline builds feeds for. Each key is a distinct
+# Merchant Center data source: its own scheduled-fetch URL (own --out
+# basename), and its own "target country" + "language" pair set manually in
+# the MC wizard (see README) -- this pipeline does not set country/language
+# in the feed itself, it only selects which locale's title/description to
+# pull, matching whichever MC data source(s) will fetch that output file.
+#
+# "countries" is documentation of the intended MC target(s) for that data
+# source, not a filter: the Shopify query below always pulls the full active
+# catalog regardless of market, because Shopify Markets (Settings > Markets)
+# already governs which countries can actually buy each product. DE/AT/LU
+# share identical (German) content today because all three MC data sources
+# point at the same feed file -- "de" stays a single build. Belgium needs
+# its own two builds (be-fr, be-nl) because it's the first market this feed
+# targets that isn't German-language.
+#
+# France is deliberately absent. Shopify Markets has France set to Draft
+# (not selling) as of 2026-09-01 -- do not add a France entry here, and do
+# not point a France-targeted MC data source at the be-fr build (be-fr's
+# French content is for Belgian French-speakers; its MC data source must be
+# configured with target country Belgium, not France). Re-add France only
+# after confirming its Market is Active again.
+# ---------------------------------------------------------------------------
+MARKETS = {
+    "de": {"locale": "de", "link_prefix": "", "countries": ["Germany", "Austria", "Luxembourg"]},
+    "be-fr": {"locale": "fr", "link_prefix": "/fr", "countries": ["Belgium"]},
+    "be-nl": {"locale": "nl", "link_prefix": "/nl", "countries": ["Belgium"]},
+}
 
 # EU 2019/771 gives every EU consumer a minimum 2-year statutory conformity
 # guarantee regardless of what a merchant's own return policy says. This is
@@ -287,7 +323,7 @@ def _get_access_token(shop_domain, client_id, client_secret):
 
 
 PRODUCTS_QUERY = """
-query($cursor: String) {
+query($cursor: String, $locale: String!) {
   products(first: 100, after: $cursor, query: "status:active") {
     pageInfo { hasNextPage endCursor }
     edges {
@@ -298,7 +334,7 @@ query($cursor: String) {
         vendor
         status
         featuredImage { url }
-        translations(locale: "de") { key value }
+        translations(locale: $locale) { key value }
         variants(first: 100) {
           edges {
             node {
@@ -316,20 +352,33 @@ query($cursor: String) {
 """
 
 
-def load_products_from_shopify_api(shop_domain, client_id, client_secret):
+def load_products_from_shopify_api(shop_domain, client_id, client_secret, market="de"):
     """Live pull: paginates products(status:active), flattens to one
     ProductRow per variant. Mirrors load_products_from_csv()'s output shape
     exactly so the rest of the pipeline can't tell which adapter ran.
 
-    Feed label is DE and the feed's `link` is the storefront's bare URL,
-    which renders German by default (confirmed via hreflang: the bare URL
-    is hreflang="de", with /en/, /nl/, /fr/ as the other locales) -- so
-    title/description must come from the German translation, not the
-    admin's default-locale (English) fields, or the feed would describe a
-    page in a different language than the one it links to. No fallback to
-    English on a missing DE translation: better to let validate_row's
-    normal missing-field exclusion catch it than silently publish
-    mismatched-language content under feed label DE."""
+    `market` selects a MARKETS entry (locale + link_prefix). Defaults to
+    "de" so existing callers keep today's exact behavior.
+
+    The feed's `link` must match the locale being pulled -- confirmed via
+    hreflang: the storefront's bare URL is hreflang="de" (German default),
+    with /fr/, /nl/, /en/ prefixes for the other locales. Publishing German
+    title/description under a bare (German) link, or French/Dutch
+    title/description under an /fr/ or /nl/ link, keeps the feed's language
+    matching the page it links to -- see MARKETS' link_prefix per market.
+
+    No fallback to another locale on a missing translation for the
+    requested market: a product missing that locale's title and/or
+    body_html translation is flagged via ProductRow['translation_missing']
+    instead of silently publishing blank or mismatched-language content.
+    run_pipeline() excludes these and reports them as a distinct category
+    (translation gap) separate from ordinary validation failures or from
+    "genuinely no content at all" (empty_description, the DE case)."""
+    if market not in MARKETS:
+        raise ValueError(f"Unknown market '{market}' -- choices are {sorted(MARKETS)}")
+    locale = MARKETS[market]["locale"]
+    link_prefix = MARKETS[market]["link_prefix"]
+
     token = _get_access_token(shop_domain, client_id, client_secret)
     url = f"https://{shop_domain}/admin/api/{API_VERSION}/graphql.json"
     rows = []
@@ -338,7 +387,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret):
         resp = requests.post(
             url,
             headers={"Content-Type": "application/json", "X-Shopify-Access-Token": token},
-            json={"query": PRODUCTS_QUERY, "variables": {"cursor": cursor}},
+            json={"query": PRODUCTS_QUERY, "variables": {"cursor": cursor, "locale": locale}},
             timeout=30,
         )
         resp.raise_for_status()
@@ -349,9 +398,10 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret):
         for edge in block["edges"]:
             node = edge["node"]
             handle = node["handle"]
-            de = {t["key"]: t["value"] for t in node.get("translations") or []}
-            title = de.get("title") or ""
-            description = strip_html(de.get("body_html") or "")
+            tr = {t["key"]: t["value"] for t in node.get("translations") or []}
+            title = tr.get("title") or ""
+            description = strip_html(tr.get("body_html") or "")
+            translation_missing = not tr.get("title") or not tr.get("body_html")
             image = (node.get("featuredImage") or {}).get("url", "") or ""
             for vedge in node["variants"]["edges"]:
                 v = vedge["node"]
@@ -366,7 +416,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret):
                     id=sku,
                     title=title,
                     description=description,
-                    link=f"https://{STORE_DOMAIN_PUBLIC}/products/{quote(handle)}?variant_sku={quote(sku)}",
+                    link=f"https://{STORE_DOMAIN_PUBLIC}{link_prefix}/products/{quote(handle)}?variant_sku={quote(sku)}",
                     image_link=image,
                     price_amount=price_amount,
                     price=f"{price_amount} EUR" if price_amount else "",
@@ -376,6 +426,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret):
                     gtin=barcode if gtin_checksum_valid(barcode) else "",
                     mpn=sku,
                     item_group_id=handle,
+                    translation_missing=translation_missing,
                 ))
         if not block["pageInfo"]["hasNextPage"]:
             break
@@ -392,13 +443,22 @@ FEED_COLUMNS = [
 ]
 
 
-def run_pipeline(rows, out_basename, run_label):
-    accepted, excluded, sample_rejected, empty_description = [], [], [], []
+def run_pipeline(rows, out_basename, run_label, market="de"):
+    accepted, excluded, sample_rejected, empty_description, missing_translation = [], [], [], [], []
 
     for row in rows:
         sample_reason = is_known_sample_value(row)
         if sample_reason:
             sample_rejected.append((row, sample_reason))
+            continue
+
+        if row.get("translation_missing"):
+            # Distinct from empty_description: the German catalog copy
+            # exists, it just hasn't been translated into this market's
+            # locale yet -- an actionable translation-backlog item, not a
+            # generic validation bug or missing-content case. Never
+            # silently published blank/partial under this market's feed.
+            missing_translation.append(row)
             continue
 
         is_valid, reasons = validate_row(row)
@@ -434,6 +494,8 @@ def run_pipeline(rows, out_basename, run_label):
             writer.writerow([row.get("id", ""), row.get("title", ""), "; ".join(reasons), "validation"])
         for row, reason in sample_rejected:
             writer.writerow([row.get("id", ""), row.get("title", ""), reason, "sample_data"])
+        for row in missing_translation:
+            writer.writerow([row.get("id", ""), row.get("handle", ""), "title and/or body_html not translated into this market's locale", "missing_translation"])
 
     report_lines = [
         f"# Merchant feed build report -- {run_label}",
@@ -443,6 +505,7 @@ def run_pipeline(rows, out_basename, run_label):
         f"- Excluded (validation failures): {len(excluded)}",
         f"- Rejected (known Google sample/placeholder data): {len(sample_rejected)}",
         f"- Excluded for empty body_html -- needs written content (not auto-generated): {len(empty_description)}",
+        f"- Excluded for missing locale translation (title and/or body_html not yet translated): {len(missing_translation)}",
         "",
     ]
     if sample_rejected:
@@ -470,8 +533,28 @@ def run_pipeline(rows, out_basename, run_label):
         for row in empty_description:
             report_lines.append(f"- `{row.get('id')}` {row.get('title')}")
         report_lines.append("")
+    if missing_translation:
+        report_lines.append(f"## Products missing this market's translation ({len(missing_translation)})")
+        report_lines.append(
+            "Excluded from this market's feed -- title and/or body_html has not been "
+            "translated into this market's locale yet (German content may still exist; "
+            "not the same as empty_description):"
+        )
+        seen_handles = set()
+        for row in missing_translation:
+            handle = row.get("handle") or "(no handle)"
+            if handle in seen_handles:
+                continue  # one line per product, not per variant
+            seen_handles.add(handle)
+            report_lines.append(f"- `{handle}` (sku `{row.get('id')}`)")
+        report_lines.append("")
 
-    report_path = REPORTS_DIR / f"{date.today().isoformat()}.md"
+    # DE keeps its exact existing filename (send_weekly_report.py looks up
+    # reports/YYYY-MM-DD.md verbatim for the DE digest) -- only non-DE
+    # markets get a suffix, so running multiple markets on the same day
+    # can't silently overwrite each other's report (or DE's).
+    report_suffix = "" if market == "de" else f"_{market}"
+    report_path = REPORTS_DIR / f"{date.today().isoformat()}{report_suffix}.md"
     report_path.write_text("\n".join(report_lines), encoding="utf-8")
 
     return {
@@ -480,6 +563,7 @@ def run_pipeline(rows, out_basename, run_label):
         "excluded": len(excluded),
         "sample_rejected": len(sample_rejected),
         "empty_description": empty_description,
+        "missing_translation": missing_translation,
         "feed_csv_path": feed_csv_path,
         "feed_txt_path": feed_txt_path,
         "exclusions_path": exclusions_path,
@@ -491,6 +575,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--source", choices=["csv", "shopify-api"], required=True)
     parser.add_argument("--csv-path", help="Path to a Shopify product export CSV (required for --source csv)")
+    parser.add_argument("--market", choices=sorted(MARKETS), default="de",
+                         help="Target market/locale to build for (--source shopify-api only; see MARKETS). Default: de")
     parser.add_argument("--out", default=None, help="Output basename under data/ (default: google_merchant_feed_<date>)")
     parser.add_argument("--dry-run", action="store_true", help="Build and validate but do not write files (prints summary only)")
     args = parser.parse_args()
@@ -498,6 +584,8 @@ def main():
     if args.source == "csv":
         if not args.csv_path:
             parser.error("--csv-path is required when --source csv")
+        if args.market != "de":
+            parser.error("--market is not supported with --source csv (the export CSV carries no locale selection)")
         rows = load_products_from_csv(args.csv_path)
         run_label = f"csv:{args.csv_path} on {date.today().isoformat()}"
     else:
@@ -507,28 +595,34 @@ def main():
         if not all([shop_domain, client_id, client_secret]):
             print("ERROR: SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET must all be set for --source shopify-api", file=sys.stderr)
             sys.exit(1)
-        rows = load_products_from_shopify_api(shop_domain, client_id, client_secret)
-        run_label = f"shopify-api:{shop_domain} on {date.today().isoformat()}"
+        rows = load_products_from_shopify_api(shop_domain, client_id, client_secret, market=args.market)
+        run_label = f"shopify-api:{shop_domain} market={args.market} on {date.today().isoformat()}"
 
     out_basename = args.out or f"google_merchant_feed_{date.today().isoformat()}"
 
     if args.dry_run:
-        accepted, excluded, sample_rejected = 0, 0, 0
+        accepted, excluded, sample_rejected, missing_translation = 0, 0, 0, 0
         for row in rows:
             if is_known_sample_value(row):
                 sample_rejected += 1
+            elif row.get("translation_missing"):
+                missing_translation += 1
             elif not validate_row(row)[0]:
                 excluded += 1
             else:
                 accepted += 1
-        print(f"[dry-run] rows_read={len(rows)} accepted={accepted} excluded={excluded} sample_rejected={sample_rejected}")
+        print(
+            f"[dry-run] rows_read={len(rows)} accepted={accepted} excluded={excluded} "
+            f"sample_rejected={sample_rejected} missing_translation={missing_translation}"
+        )
         return
 
-    stats = run_pipeline(rows, out_basename, run_label)
+    stats = run_pipeline(rows, out_basename, run_label, market=args.market)
     print(
         f"rows_read={stats['rows_read']} accepted={stats['accepted']} "
         f"excluded={stats['excluded']} sample_rejected={stats['sample_rejected']} "
-        f"empty_description={len(stats['empty_description'])}"
+        f"empty_description={len(stats['empty_description'])} "
+        f"missing_translation={len(stats['missing_translation'])}"
     )
     print(f"Feed written to {stats['feed_csv_path']} and {stats['feed_txt_path']}")
     print(f"Exclusions logged to {stats['exclusions_path']}")
