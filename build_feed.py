@@ -525,9 +525,9 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
             image = (node.get("featuredImage") or {}).get("url", "") or ""
             additional_images = []
             for img in (node.get("images") or {}).get("nodes") or []:
-                url = (img or {}).get("url") or ""
-                if url and url != image and url not in additional_images:
-                    additional_images.append(url)
+                img_url = (img or {}).get("url") or ""
+                if img_url and img_url != image and img_url not in additional_images:
+                    additional_images.append(img_url)
             additional_images = additional_images[:MAX_ADDITIONAL_IMAGES]
             material = (node.get("fabricMetafield") or {}).get("value") or ""
             for vedge in node["variants"]["edges"]:

@@ -484,6 +484,48 @@ def test_load_products_from_shopify_api_caps_additional_images_at_ten(mock_post)
 
 
 @patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_pagination_url_survives_products_with_images(mock_post):
+    """Regression test: processing a product's `images` field used to reuse
+    the local variable name `url`, clobbering the GraphQL endpoint URL that
+    the *next* page's request needs. Every prior test mocks requests.post
+    with a fixed side_effect list, which ignores whatever `url` argument is
+    actually passed -- so this bug was invisible to the whole suite and only
+    surfaced as a real 405 (POSTing to a Shopify CDN image URL) in production
+    once real pagination with real HTTP calls ran. This test inspects the
+    actual url argument on every call instead of ignoring it."""
+    build_feed._cached_token = None
+    graphql_endpoint = f"https://test-shop.myshopify.com/admin/api/{build_feed.API_VERSION}/graphql.json"
+
+    node_with_images = dict(MOCK_GRAPHQL_RESPONSE["data"]["products"]["edges"][0]["node"])
+    node_with_images["images"] = {"nodes": [{"url": "https://cdn.shopify.com/extra1.jpg"}, {"url": "https://cdn.shopify.com/extra2.jpg"}]}
+    page1 = {"data": {"products": {"pageInfo": {"hasNextPage": True, "endCursor": "CURSOR1"},
+                                    "edges": [{"node": node_with_images}]}}}
+    page2 = MOCK_GRAPHQL_RESPONSE
+
+    calls = []
+
+    def fake_post(url, **kwargs):
+        calls.append(url)
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        if len(calls) == 1:
+            resp.json.return_value = {"access_token": "tok"}
+        elif len(calls) == 2:
+            resp.json.return_value = page1
+        else:
+            resp.json.return_value = page2
+        return resp
+
+    mock_post.side_effect = fake_post
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
+
+    assert len(rows) == 2
+    graphql_calls = calls[1:]
+    assert all(u == graphql_endpoint for u in graphql_calls), f"expected every call to hit {graphql_endpoint}, got {calls}"
+
+
+@patch("build_feed.requests.post")
 def test_load_products_from_shopify_api_paginates(mock_post):
     build_feed._cached_token = None
 
