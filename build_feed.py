@@ -147,14 +147,35 @@ SAMPLE_LINK_SUBSTRINGS = ("example.com",)
 
 REQUIRED_FIELDS = ("id", "title", "description", "link", "image_link", "price", "availability")
 
+# Google's cap on additional images per offer (support.google.com/merchants/answer/6324370).
+MAX_ADDITIONAL_IMAGES = 10
+
 
 class ProductRow(dict):
     """A single feed-eligible offer: one Shopify variant flattened to the
     field names Google's product feed spec uses. Plain dict subclass -- no
     behavior, just a documented shape so callers don't have to guess keys:
-    id, title, description, link, image_link, price, availability, brand,
-    condition, gtin, mpn, item_group_id, handle (handle is feed-internal,
-    stripped before writing -- kept only for grouping/debugging)."""
+    id, title, description, link, image_link, additional_image_link, price,
+    availability, brand, condition, gtin, mpn, item_group_id, color, size,
+    material, handle (handle is feed-internal, stripped before writing --
+    kept only for grouping/debugging). additional_image_link is optional --
+    Google's own format for it in a tab/comma-delimited feed is a single
+    column holding up to 10 comma-separated URLs
+    (support.google.com/merchants/answer/6324370), not a repeated column, so
+    it is built and stored as one pre-joined string, same as every other
+    column here.
+
+    color/size/material are populated ONLY from data that genuinely exists
+    on the product in Shopify -- a real "Color"/"Size" variant option, or the
+    maison_seo.fabric metafield for material. A product with no Color option
+    (some Casilin and Boomba Bedding Set products) gets color="" rather than
+    a value parsed out of its title -- never invented, never defaulted. There
+    is deliberately no `pattern` field: no source of pattern data exists
+    anywhere in this catalog's Shopify data (no option, metafield, or tag),
+    and defaulting one in (e.g. "solid") would be fabricated data on a feed
+    for an account with a prior Misrepresentation suspension -- see the
+    module docstring's sample-data guard for why that risk is taken
+    seriously here."""
 
 
 def strip_html(raw):
@@ -207,6 +228,7 @@ def is_known_sample_value(row):
     brand = str(row.get("brand", "")).strip().lower()
     link = str(row.get("link", "")).strip().lower()
     image_link = str(row.get("image_link", "")).strip().lower()
+    additional_image_link = str(row.get("additional_image_link", "")).strip().lower()
 
     if pid in SAMPLE_IDS:
         return f"id '{row.get('id')}' matches a known Google sample feed id"
@@ -220,6 +242,8 @@ def is_known_sample_value(row):
         return f"link '{row.get('link')}' points at a placeholder domain (example.com)"
     if any(s in image_link for s in SAMPLE_LINK_SUBSTRINGS):
         return f"image_link '{row.get('image_link')}' points at a placeholder domain (example.com)"
+    if any(s in additional_image_link for s in SAMPLE_LINK_SUBSTRINGS):
+        return f"additional_image_link '{row.get('additional_image_link')}' points at a placeholder domain (example.com)"
     return None
 
 
@@ -258,57 +282,121 @@ def validate_row(row):
 # ---------------------------------------------------------------------------
 # Input adapter 1: Shopify "Export products" CSV (Layer 1 / offline testing)
 # ---------------------------------------------------------------------------
+def _collect_csv_images(raw_rows):
+    """Collects every distinct Image Src per handle across ALL rows for that
+    handle -- including the image-only continuation rows load_products_from_csv
+    otherwise skips (no Variant SKU) -- ordered by Shopify's own Image
+    Position column where present, falling back to file order when it's
+    blank/non-numeric. Used to build additional_image_link: the row's own
+    image_link is excluded from the list by the caller, not here, since this
+    function doesn't know per-variant which image that row already used."""
+    positioned = {}
+    for idx, raw in enumerate(raw_rows):
+        handle = (raw.get("Handle") or "").strip()
+        src = (raw.get("Image Src") or "").strip()
+        if not handle or not src:
+            continue
+        try:
+            pos = int(float(raw.get("Image Position") or ""))
+        except ValueError:
+            pos = idx
+        positioned.setdefault(handle, []).append((pos, src))
+
+    images_by_handle = {}
+    for handle, entries in positioned.items():
+        entries.sort(key=lambda entry: entry[0])
+        seen, ordered = set(), []
+        for _, src in entries:
+            if src in seen:
+                continue
+            seen.add(src)
+            ordered.append(src)
+        images_by_handle[handle] = ordered
+    return images_by_handle
+
+
+def _csv_option_value(raw, option_name):
+    """Looks up a named Shopify product option's value for one CSV row.
+    Shopify's product export carries up to 3 option columns per variant row
+    as Option<N> Name / Option<N> Value pairs -- this checks all 3 slots,
+    case-insensitively on the name, and returns "" if that product simply
+    doesn't have an option by this name (never falls back to parsing the
+    title/handle)."""
+    target = option_name.strip().lower()
+    for i in (1, 2, 3):
+        name = (raw.get(f"Option{i} Name") or "").strip().lower()
+        if name == target:
+            return (raw.get(f"Option{i} Value") or "").strip()
+    return ""
+
+
 def load_products_from_csv(path):
     """Parses a Shopify product export CSV into ProductRow objects, one per
     variant. Shopify's export repeats the handle across variant/image rows
     and leaves Title/Body (HTML)/Vendor blank on every row after a product's
     first -- both are carried forward here by tracking the last-seen values
     per handle, matching how Shopify's own bulk editor interprets the file."""
+    with open(path, newline="", encoding="utf-8") as f:
+        raw_rows = list(csv.DictReader(f))
+
+    images_by_handle = _collect_csv_images(raw_rows)
+
     rows = []
     carry = {}
-    with open(path, newline="", encoding="utf-8") as f:
-        for raw in csv.DictReader(f):
-            handle = raw.get("Handle", "").strip()
-            if not handle:
-                continue
-            if raw.get("Title", "").strip():
-                carry[handle] = {
-                    "title": raw["Title"].strip(),
-                    "body_html": raw.get("Body (HTML)", "") or "",
-                    "vendor": raw.get("Vendor", "").strip(),
-                }
-            base = carry.get(handle, {"title": "", "body_html": "", "vendor": ""})
+    for raw in raw_rows:
+        handle = raw.get("Handle", "").strip()
+        if not handle:
+            continue
+        if raw.get("Title", "").strip():
+            carry[handle] = {
+                "title": raw["Title"].strip(),
+                "body_html": raw.get("Body (HTML)", "") or "",
+                "vendor": raw.get("Vendor", "").strip(),
+            }
+        base = carry.get(handle, {"title": "", "body_html": "", "vendor": ""})
 
-            sku = raw.get("Variant SKU", "").strip()
-            if not sku:
-                continue  # image-only / option-only continuation row, not an offer
-            if (raw.get("Status") or "active").strip().lower() != "active":
-                continue  # draft/archived products are never Merchant Center eligible
+        sku = raw.get("Variant SKU", "").strip()
+        if not sku:
+            continue  # image-only / option-only continuation row, not an offer
+        if (raw.get("Status") or "active").strip().lower() != "active":
+            continue  # draft/archived products are never Merchant Center eligible
 
-            barcode = (raw.get("Variant Barcode") or "").strip()
-            image = (raw.get("Image Src") or "").strip()
-            qty_raw = (raw.get("Variant Inventory Qty") or "").strip()
-            try:
-                qty = int(float(qty_raw)) if qty_raw else 0
-            except ValueError:
-                qty = 0
+        barcode = (raw.get("Variant Barcode") or "").strip()
+        image = (raw.get("Image Src") or "").strip()
+        additional_images = [u for u in images_by_handle.get(handle, []) if u != image][:MAX_ADDITIONAL_IMAGES]
+        color = _csv_option_value(raw, "color")
+        size = _csv_option_value(raw, "size")
+        qty_raw = (raw.get("Variant Inventory Qty") or "").strip()
+        try:
+            qty = int(float(qty_raw)) if qty_raw else 0
+        except ValueError:
+            qty = 0
 
-            rows.append(ProductRow(
-                handle=handle,
-                id=sku,
-                title=base["title"],
-                description=strip_html(base["body_html"]),
-                link=f"https://{STORE_DOMAIN_PUBLIC}/products/{quote(handle)}?variant_sku={quote(sku)}",
-                image_link=image,
-                price_amount=raw.get("Variant Price", "").strip(),
-                price=f"{raw.get('Variant Price', '').strip()} EUR" if raw.get("Variant Price", "").strip() else "",
-                availability="in_stock" if qty > 0 else "out_of_stock",
-                brand=base["vendor"],
-                condition="new",
-                gtin=barcode if gtin_checksum_valid(barcode) else "",
-                mpn=sku,
-                item_group_id=handle,
-            ))
+        rows.append(ProductRow(
+            handle=handle,
+            id=sku,
+            title=base["title"],
+            description=strip_html(base["body_html"]),
+            link=f"https://{STORE_DOMAIN_PUBLIC}/products/{quote(handle)}?variant_sku={quote(sku)}",
+            image_link=image,
+            additional_image_link=",".join(additional_images),
+            price_amount=raw.get("Variant Price", "").strip(),
+            price=f"{raw.get('Variant Price', '').strip()} EUR" if raw.get("Variant Price", "").strip() else "",
+            availability="in_stock" if qty > 0 else "out_of_stock",
+            brand=base["vendor"],
+            condition="new",
+            gtin=barcode if gtin_checksum_valid(barcode) else "",
+            mpn=sku,
+            item_group_id=handle,
+            color=color,
+            size=size,
+            # Shopify's default "Export products" CSV does not include custom
+            # metafields (maison_seo.fabric would need to be explicitly added
+            # as its own export column, which this pipeline doesn't assume is
+            # present) -- left blank for CSV-sourced rows rather than guessed.
+            # The shopify-api adapter is the source of truth for material.
+            material="",
+        ))
     return rows
 
 
@@ -350,7 +438,9 @@ query($cursor: String, $locale: String!) {
         vendor
         status
         featuredImage { url }
+        images(first: 11) { nodes { url } }
         translations(locale: $locale) { key value }
+        fabricMetafield: metafield(namespace: "maison_seo", key: "fabric") { value }
         variants(first: 100) {
           edges {
             node {
@@ -358,6 +448,7 @@ query($cursor: String, $locale: String!) {
               price
               barcode
               inventoryQuantity
+              selectedOptions { name value }
             }
           }
         }
@@ -432,6 +523,13 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                 description = strip_html(tr.get("body_html") or "")
                 translation_missing = not tr.get("title") or not tr.get("body_html")
             image = (node.get("featuredImage") or {}).get("url", "") or ""
+            additional_images = []
+            for img in (node.get("images") or {}).get("nodes") or []:
+                url = (img or {}).get("url") or ""
+                if url and url != image and url not in additional_images:
+                    additional_images.append(url)
+            additional_images = additional_images[:MAX_ADDITIONAL_IMAGES]
+            material = (node.get("fabricMetafield") or {}).get("value") or ""
             for vedge in node["variants"]["edges"]:
                 v = vedge["node"]
                 sku = (v.get("sku") or "").strip()
@@ -440,6 +538,16 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                 barcode = (v.get("barcode") or "").strip()
                 qty = v.get("inventoryQuantity") or 0
                 price_amount = str(v.get("price") or "")
+                # Only ever read from a real Shopify variant option by this
+                # exact name -- "" (not a title-parsed guess) when the
+                # product has no such option, e.g. several Casilin and
+                # Boomba Bedding Set products have Size only, no Color.
+                selected_options = {
+                    (opt.get("name") or "").strip().lower(): (opt.get("value") or "").strip()
+                    for opt in (v.get("selectedOptions") or [])
+                }
+                color = selected_options.get("color", "")
+                size = selected_options.get("size", "")
                 rows.append(ProductRow(
                     handle=handle,
                     id=sku,
@@ -447,6 +555,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                     description=description,
                     link=f"https://{STORE_DOMAIN_PUBLIC}{link_prefix}/products/{quote(handle)}?variant_sku={quote(sku)}",
                     image_link=image,
+                    additional_image_link=",".join(additional_images),
                     price_amount=price_amount,
                     price=f"{price_amount} EUR" if price_amount else "",
                     availability="in_stock" if qty > 0 else "out_of_stock",
@@ -455,6 +564,9 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                     gtin=barcode if gtin_checksum_valid(barcode) else "",
                     mpn=sku,
                     item_group_id=handle,
+                    color=color,
+                    size=size,
+                    material=material,
                     translation_missing=translation_missing,
                 ))
         if not block["pageInfo"]["hasNextPage"]:
@@ -467,8 +579,9 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
 # Pipeline: validate -> reject samples -> write feed + exclusions + report
 # ---------------------------------------------------------------------------
 FEED_COLUMNS = [
-    "id", "title", "description", "link", "image_link", "availability",
-    "price", "brand", "condition", "gtin", "mpn", "item_group_id",
+    "id", "title", "description", "link", "image_link", "additional_image_link",
+    "availability", "price", "brand", "condition", "gtin", "mpn", "item_group_id",
+    "color", "size", "material",
 ]
 
 

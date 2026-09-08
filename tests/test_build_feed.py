@@ -92,6 +92,12 @@ def test_sample_value_catches_placeholder_gtin():
     assert build_feed.is_known_sample_value(row) is not None
 
 
+def test_sample_value_catches_example_domain_additional_image_link():
+    row = build_feed.ProductRow(id="x", title="Anything", brand="X", link="", image_link="https://cdn.shopify.com/x.jpg",
+                                 additional_image_link="http://www.example.com/image2.jpg", gtin="")
+    assert build_feed.is_known_sample_value(row) is not None
+
+
 def test_sample_value_ignores_normal_row():
     row = build_feed.ProductRow(id="8720828225332", title="Bamboo Fitted Sheet", brand="Boomba Bamboo",
                                  link="https://www.maisondecocon.com/products/x", image_link="https://cdn.shopify.com/x.jpg",
@@ -184,6 +190,64 @@ def test_load_products_from_csv_skips_rows_without_sku():
     assert all(r["id"] for r in rows)
 
 
+def test_load_products_from_csv_builds_additional_image_link_from_image_only_rows():
+    # The fixture's bamboo-fitted-sheet handle has two image-only
+    # continuation rows (blank Title/Variant SKU) after its main row --
+    # exactly how Shopify's export represents a product's 2nd/3rd photos.
+    rows = build_feed.load_products_from_csv(str(FIXTURE_CSV))
+    sheet = next(r for r in rows if r["id"] == "8720828225332")
+    assert sheet["image_link"] == "https://cdn.shopify.com/s/files/1/0000/0000/products/bamboo-fitted-sheet-sky-blue.jpg"
+    assert sheet["additional_image_link"] == (
+        "https://cdn.shopify.com/s/files/1/0000/0000/products/bamboo-fitted-sheet-sky-blue-2.jpg,"
+        "https://cdn.shopify.com/s/files/1/0000/0000/products/bamboo-fitted-sheet-sky-blue-3.jpg"
+    )
+
+
+def test_load_products_from_csv_extracts_color_and_size_from_options():
+    rows = build_feed.load_products_from_csv(str(FIXTURE_CSV))
+    sheet = next(r for r in rows if r["id"] == "8720828225332")
+    assert sheet["color"] == "Sky Blue"
+    assert sheet["size"] == "140x200 cm"
+
+
+def test_load_products_from_csv_color_blank_when_no_color_option():
+    # every other row in the fixture has no Option1/2 Name/Value at all --
+    # confirms no title-parsed fallback ever kicks in.
+    rows = build_feed.load_products_from_csv(str(FIXTURE_CSV))
+    others = [r for r in rows if r["id"] != "8720828225332"]
+    assert all(r["color"] == "" and r["size"] == "" for r in others)
+
+
+def test_load_products_from_csv_material_always_blank():
+    # Shopify's default product export CSV carries no custom metafields --
+    # material has no source in this adapter, ever.
+    rows = build_feed.load_products_from_csv(str(FIXTURE_CSV))
+    assert all(r["material"] == "" for r in rows)
+
+
+def test_csv_option_value_case_insensitive_and_checks_all_three_slots():
+    raw = {"Option1 Name": "Pattern", "Option1 Value": "Striped",
+           "Option2 Name": "COLOR", "Option2 Value": "Red",
+           "Option3 Name": "", "Option3 Value": ""}
+    assert build_feed._csv_option_value(raw, "color") == "Red"
+    assert build_feed._csv_option_value(raw, "size") == ""
+
+
+def test_load_products_from_csv_additional_image_link_blank_when_no_extra_images():
+    rows = build_feed.load_products_from_csv(str(FIXTURE_CSV))
+    single_image_product = next(r for r in rows if r["id"] == "3333339014050")
+    assert single_image_product["additional_image_link"] == ""
+
+
+def test_collect_csv_images_caps_at_ten_and_dedupes():
+    raw_rows = [{"Handle": "h", "Image Src": f"https://x/{i}.jpg", "Image Position": str(i)} for i in range(1, 13)]
+    raw_rows.append({"Handle": "h", "Image Src": "https://x/1.jpg", "Image Position": "1"})  # duplicate
+    images = build_feed._collect_csv_images(raw_rows)
+    assert len(images["h"]) == 12  # collection itself isn't capped -- the caller applies MAX_ADDITIONAL_IMAGES
+    assert images["h"][0] == "https://x/1.jpg"
+    assert images["h"].count("https://x/1.jpg") == 1
+
+
 def test_full_pipeline_end_to_end_counts(tmp_path):
     rows = build_feed.load_products_from_csv(str(FIXTURE_CSV))
     orig_data_dir, orig_reports_dir = build_feed.DATA_DIR, build_feed.REPORTS_DIR
@@ -201,6 +265,15 @@ def test_full_pipeline_end_to_end_counts(tmp_path):
         assert stats["feed_txt_path"].exists()
         assert stats["exclusions_path"].exists()
         assert stats["report_path"].exists()
+
+        header = stats["feed_csv_path"].read_text(encoding="utf-8").splitlines()[0]
+        assert "additional_image_link" in header.split(",")
+        assert {"color", "size", "material"} <= set(header.split(","))
+        # the one accepted row (the bamboo fitted sheet) is the same handle
+        # that carries the fixture's two extra image-only rows.
+        body = stats["feed_csv_path"].read_text(encoding="utf-8")
+        assert "bamboo-fitted-sheet-sky-blue-2.jpg" in body
+        assert "bamboo-fitted-sheet-sky-blue-3.jpg" in body
     finally:
         build_feed.DATA_DIR, build_feed.REPORTS_DIR = orig_data_dir, orig_reports_dir
 
@@ -267,6 +340,147 @@ def test_load_products_from_shopify_api_mocked(mock_post):
     assert mock_post.call_count == 2
     assert "oauth/access_token" in mock_post.call_args_list[0].args[0]
     assert "graphql.json" in mock_post.call_args_list[1].args[0]
+    assert row["additional_image_link"] == ""  # MOCK_GRAPHQL_RESPONSE's node carries no images field
+    # MOCK_GRAPHQL_RESPONSE's node carries no fabricMetafield/selectedOptions
+    assert row["color"] == ""
+    assert row["size"] == ""
+    assert row["material"] == ""
+
+
+@patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_maps_color_size_material_from_real_shopify_data(mock_post):
+    build_feed._cached_token = None
+
+    token_response = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-token"}
+    token_response.raise_for_status.return_value = None
+
+    node = dict(MOCK_GRAPHQL_RESPONSE["data"]["products"]["edges"][0]["node"])
+    node["fabricMetafield"] = {"value": "100% Bamboo (Tanboocel™)"}
+    node["variants"] = {
+        "edges": [
+            {"node": {"sku": "MOCK-1", "price": "50.00", "barcode": "4006381333931", "inventoryQuantity": 5,
+                      "selectedOptions": [{"name": "Size", "value": "140x200 cm"}, {"name": "Color", "value": "Coco white"}]}}
+        ]
+    }
+    response = {"data": {"products": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "edges": [{"node": node}]}}}
+    graphql_response = MagicMock()
+    graphql_response.json.return_value = response
+    graphql_response.raise_for_status.return_value = None
+    mock_post.side_effect = [token_response, graphql_response]
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
+
+    assert len(rows) == 1
+    assert rows[0]["color"] == "Coco white"
+    assert rows[0]["size"] == "140x200 cm"
+    assert rows[0]["material"] == "100% Bamboo (Tanboocel™)"
+
+
+@patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_color_blank_when_no_color_option(mock_post):
+    """A product with only a Size option (several Casilin and Boomba Bedding
+    Set products) must get color="" -- never a value parsed from the title,
+    even though the title clearly contains a colour word."""
+    build_feed._cached_token = None
+
+    token_response = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-token"}
+    token_response.raise_for_status.return_value = None
+
+    node = dict(MOCK_GRAPHQL_RESPONSE["data"]["products"]["edges"][0]["node"])
+    node["title"] = "Royal Percale Fitted Sheet - Beige"
+    node["fabricMetafield"] = {"value": "100% percale cotton"}
+    node["variants"] = {
+        "edges": [
+            {"node": {"sku": "SROYALPS434137", "price": "60.00", "barcode": "", "inventoryQuantity": 3,
+                      "selectedOptions": [{"name": "Size", "value": "200 x 200 cm"}]}}
+        ]
+    }
+    response = {"data": {"products": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "edges": [{"node": node}]}}}
+    graphql_response = MagicMock()
+    graphql_response.json.return_value = response
+    graphql_response.raise_for_status.return_value = None
+    mock_post.side_effect = [token_response, graphql_response]
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
+
+    assert len(rows) == 1
+    assert rows[0]["color"] == ""
+    assert rows[0]["size"] == "200 x 200 cm"
+    assert rows[0]["material"] == "100% percale cotton"
+
+
+@patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_material_blank_when_no_fabric_metafield(mock_post):
+    build_feed._cached_token = None
+
+    token_response = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-token"}
+    token_response.raise_for_status.return_value = None
+
+    node = dict(MOCK_GRAPHQL_RESPONSE["data"]["products"]["edges"][0]["node"])
+    node["fabricMetafield"] = None
+    graphql_response_payload = {"data": {"products": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "edges": [{"node": node}]}}}
+    graphql_response = MagicMock()
+    graphql_response.json.return_value = graphql_response_payload
+    graphql_response.raise_for_status.return_value = None
+    mock_post.side_effect = [token_response, graphql_response]
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
+
+    assert rows[0]["material"] == ""
+
+
+@patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_builds_additional_image_link(mock_post):
+    build_feed._cached_token = None
+
+    token_response = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-token"}
+    token_response.raise_for_status.return_value = None
+
+    node = dict(MOCK_GRAPHQL_RESPONSE["data"]["products"]["edges"][0]["node"])
+    node["images"] = {
+        "nodes": [
+            {"url": "https://cdn.shopify.com/mocked.jpg"},  # same as featuredImage -- must be excluded
+            {"url": "https://cdn.shopify.com/mocked-2.jpg"},
+            {"url": "https://cdn.shopify.com/mocked-3.jpg"},
+            {"url": "https://cdn.shopify.com/mocked-2.jpg"},  # duplicate -- must not repeat
+        ]
+    }
+    response = {"data": {"products": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "edges": [{"node": node}]}}}
+    graphql_response = MagicMock()
+    graphql_response.json.return_value = response
+    graphql_response.raise_for_status.return_value = None
+    mock_post.side_effect = [token_response, graphql_response]
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
+
+    assert len(rows) == 1
+    assert rows[0]["image_link"] == "https://cdn.shopify.com/mocked.jpg"
+    assert rows[0]["additional_image_link"] == "https://cdn.shopify.com/mocked-2.jpg,https://cdn.shopify.com/mocked-3.jpg"
+
+
+@patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_caps_additional_images_at_ten(mock_post):
+    build_feed._cached_token = None
+
+    token_response = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-token"}
+    token_response.raise_for_status.return_value = None
+
+    node = dict(MOCK_GRAPHQL_RESPONSE["data"]["products"]["edges"][0]["node"])
+    node["images"] = {"nodes": [{"url": f"https://cdn.shopify.com/{i}.jpg"} for i in range(15)]}
+    response = {"data": {"products": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "edges": [{"node": node}]}}}
+    graphql_response = MagicMock()
+    graphql_response.json.return_value = response
+    graphql_response.raise_for_status.return_value = None
+    mock_post.side_effect = [token_response, graphql_response]
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
+
+    assert len(rows[0]["additional_image_link"].split(",")) == 10
 
 
 @patch("build_feed.requests.post")

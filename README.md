@@ -1,8 +1,10 @@
 # mdc-merchant-feed-sync
 
 Builds a Google Merchant Center product feed from Maison de Cocon's Shopify
-catalog: SKU, title, price, availability, image, GTIN/MPN, and `description`
-mapped from `body_html` (HTML stripped). Every row goes through a validation
+catalog: SKU, title, price, availability, image (plus up to 10
+`additional_image_link` photos per product, comma-joined per Google's
+text-feed format), GTIN/MPN, and `description` mapped from `body_html` (HTML
+stripped). Every row goes through a validation
 gate (missing required fields are excluded and logged, never silently
 published) and a hard reject for known Google sample/placeholder values --
 the root cause the account was previously flagged for.
