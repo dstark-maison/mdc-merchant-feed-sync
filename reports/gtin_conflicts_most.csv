@@ -1,0 +1,2 @@
+sku,proposed_barcode,handle,vendor,reason
+(resolved),,,,"wool-bedspread-cool-mint-200-220 deleted (duplicate of the 200x220 variant already on wool-throw-blanket-cool-mint-140-200); redirect created /products/wool-bedspread-cool-mint-200-220 -> /products/wool-throw-blanket-cool-mint-140-200; both GTINs applied as barcode (0793002340662, 0793002340679) on the surviving product -- see reports/2026-09-10_gtin-and-de-link-proposal.md addendum"

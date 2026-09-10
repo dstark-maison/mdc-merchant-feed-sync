@@ -1,0 +1,4 @@
+sku,value,handle,vendor,reason
+8720849140594,8720849140594,wool-throw-blanket-chocolate-chip-140-200,MoST Blankets,"barcode null; SKU fails GS1 checksum (looks like a digit transcription error, not a placeholder) -- needs supplier confirmation, do not guess the correct digit"
+8720849140570,8720849140570,wool-bed-blanket-hunter-140-200,MoST Blankets,"barcode null; SKU fails GS1 checksum (looks like a digit transcription error, not a placeholder) -- needs supplier confirmation, do not guess the correct digit"
+8720849140471,8720849140471,merino-wool-bed-blanket-aegean-140-200,MoST Blankets,"barcode null; SKU fails GS1 checksum (looks like a digit transcription error, not a placeholder) -- needs supplier confirmation, do not guess the correct digit"
