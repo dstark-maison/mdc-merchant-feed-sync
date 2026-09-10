@@ -517,11 +517,19 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                 title = node.get("title") or ""
                 description = strip_html(node.get("descriptionHtml") or "")
                 translation_missing = False  # no translation concept for the primary locale
+                link_handle = handle  # primary locale's own handle IS the base handle
             else:
                 tr = {t["key"]: t["value"] for t in node.get("translations") or []}
                 title = tr.get("title") or ""
                 description = strip_html(tr.get("body_html") or "")
                 translation_missing = not tr.get("title") or not tr.get("body_html")
+                # Shopify DOES return a locale-specific `handle` translation for
+                # products with a localized URL slug -- use it so `link` resolves
+                # directly instead of 301-redirecting through the base handle.
+                # Falls back to the base handle for products with no handle
+                # translation (e.g. some products keep the English slug in every
+                # locale).
+                link_handle = tr.get("handle") or handle
             image = (node.get("featuredImage") or {}).get("url", "") or ""
             additional_images = []
             for img in (node.get("images") or {}).get("nodes") or []:
@@ -553,7 +561,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                     id=sku,
                     title=title,
                     description=description,
-                    link=f"https://{STORE_DOMAIN_PUBLIC}{link_prefix}/products/{quote(handle)}?variant_sku={quote(sku)}",
+                    link=f"https://{STORE_DOMAIN_PUBLIC}{link_prefix}/products/{quote(link_handle)}?variant_sku={quote(sku)}",
                     image_link=image,
                     additional_image_link=",".join(additional_images),
                     price_amount=price_amount,
