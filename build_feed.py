@@ -80,33 +80,54 @@ API_VERSION = "2025-01"
 # its own two builds (be-fr, be-nl) because it's the first market this feed
 # targets that isn't German-language.
 #
-# France is deliberately absent. Shopify Markets has France set to Draft
-# (not selling) as of 2026-09-01 -- do not add a France entry here, and do
-# not point a France-targeted MC data source at the be-fr build (be-fr's
-# French content is for Belgian French-speakers; its MC data source must be
-# configured with target country Belgium, not France). Re-add France only
-# after confirming its Market is Active again.
+# France's Market went ACTIVE (re-verified live 2026-09-19; was Draft as of
+# 2026-09-01, when this guard was first written). France, Belgium, and
+# Netherlands all share the identical MarketWebPresence (domain
+# www.maisondecocon.com, same /fr/ and /nl/ subfolders) -- so French content
+# for France is byte-identical to French content for Belgium, and "be-fr"
+# now targets both countries under its existing feed label/build rather than
+# needing a second one. Adding France to the BE-FR Merchant Center data
+# source's target-country list is a manual dashboard step (see README) --
+# this pipeline never sets MC country targeting itself.
 #
-# "primary": True (the "en" entry) marks a market whose locale is this
-# shop's PRIMARY locale (confirmed via shopLocales: en.primary == true).
-# Shopify never stores a translations() record for the primary locale --
-# translations(locale: "en") returns [] for every product, always, by
-# design, not because content is missing. Primary-locale content lives on
-# the resource's own base `title`/`descriptionHtml` fields instead. The
-# loader branches on this flag: primary markets read those base fields
-# directly and never set translation_missing (there is no "translation"
-# to be missing for the shop's own native-language content -- a blank
-# base field is a genuine content gap and flows through the ordinary
-# validate_row/empty_description path, same as CSV-sourced rows already
-# do). Getting this wrong would silently ship an empty "en" feed: every
-# row would read translation_missing=True and 0 products would be
-# accepted -- verified this would happen before adding "en" here.
+# Netherlands gets its OWN market entry ("nl", distinct from "be-nl")
+# because it must exclude the ~40 Ángel Cerdá S.L. products that the NL
+# Market Catalog already excludes at the Shopify level (live-verified
+# 2026-09-19: NL Market Catalog publication = 152 active products = 191
+# total active - 39 active Cerdá products; 0 Cerdá products present in that
+# publication). be-nl (Belgium, Dutch) is NOT a Cerdá-excluded market and
+# keeps including them -- untouched by this change.
+#
+# "en-nl" (English, Netherlands) is a SEPARATE market from "nl" (Dutch,
+# Netherlands) and from "en" (English, Germany/Austria/Belgium/Luxembourg/
+# France) -- it must NOT be folded into either. Folding it into "en" would
+# ship the ~40 excluded Cerdá products to English-language NL shoppers,
+# defeating the NL exclusion entirely; "nl" is Dutch-language only. Reuses
+# the same excluded_vendors mechanism "nl" uses -- no new filtering logic.
+#
+# "primary": True (the "en" and "en-nl" entries) marks a market whose
+# locale is this shop's PRIMARY locale (confirmed via shopLocales:
+# en.primary == true). Shopify never stores a translations() record for
+# the primary locale -- translations(locale: "en") returns [] for every
+# product, always, by design, not because content is missing. Primary-
+# locale content lives on the resource's own base `title`/`descriptionHtml`
+# fields instead. The loader branches on this flag: primary markets read
+# those base fields directly and never set translation_missing (there is
+# no "translation" to be missing for the shop's own native-language
+# content -- a blank base field is a genuine content gap and flows through
+# the ordinary validate_row/empty_description path, same as CSV-sourced
+# rows already do). Getting this wrong would silently ship an empty feed:
+# every row would read translation_missing=True and 0 products would be
+# accepted -- verified this would happen before adding "en" here, and the
+# same is true for any other locale=="en" market, including "en-nl".
 # ---------------------------------------------------------------------------
 MARKETS = {
     "de": {"locale": "de", "link_prefix": "", "countries": ["Germany", "Austria", "Luxembourg"]},
-    "be-fr": {"locale": "fr", "link_prefix": "/fr", "countries": ["Belgium"]},
+    "be-fr": {"locale": "fr", "link_prefix": "/fr", "countries": ["Belgium", "France"]},
     "be-nl": {"locale": "nl", "link_prefix": "/nl", "countries": ["Belgium"]},
-    "en": {"locale": "en", "link_prefix": "/en", "countries": ["Germany", "Austria", "Belgium", "Luxembourg"], "primary": True},
+    "nl": {"locale": "nl", "link_prefix": "/nl", "countries": ["Netherlands"], "excluded_vendors": {"Ángel Cerdá S.L."}},
+    "en-nl": {"locale": "en", "link_prefix": "/en", "countries": ["Netherlands"], "excluded_vendors": {"Ángel Cerdá S.L."}, "primary": True},
+    "en": {"locale": "en", "link_prefix": "/en", "countries": ["Germany", "Austria", "Belgium", "Luxembourg", "France"], "primary": True},
 }
 
 # EU 2019/771 gives every EU consumer a minimum 2-year statutory conformity
@@ -493,6 +514,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
     locale = MARKETS[market]["locale"]
     link_prefix = MARKETS[market]["link_prefix"]
     is_primary = MARKETS[market].get("primary", False)
+    excluded_vendors = MARKETS[market].get("excluded_vendors", set())
 
     token = _get_access_token(shop_domain, client_id, client_secret)
     url = f"https://{shop_domain}/admin/api/{API_VERSION}/graphql.json"
@@ -513,6 +535,9 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
         for edge in block["edges"]:
             node = edge["node"]
             handle = node["handle"]
+            vendor = (node.get("vendor") or "").strip()
+            if vendor in excluded_vendors:
+                continue  # market-level vendor exclusion (e.g. NL excludes Ángel Cerdá S.L., per the NL Market Catalog)
             if is_primary:
                 title = node.get("title") or ""
                 description = strip_html(node.get("descriptionHtml") or "")
@@ -567,7 +592,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                     price_amount=price_amount,
                     price=f"{price_amount} EUR" if price_amount else "",
                     availability="in_stock" if qty > 0 else "out_of_stock",
-                    brand=(node.get("vendor") or "").strip(),
+                    brand=vendor,
                     condition="new",
                     gtin=barcode if gtin_checksum_valid(barcode) else "",
                     mpn=sku,
