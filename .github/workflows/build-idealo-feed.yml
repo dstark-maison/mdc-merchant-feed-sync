@@ -1,0 +1,48 @@
+name: idealo feed daily build
+
+on:
+  schedule:
+    - cron: "30 6 * * *"  # 06:30 UTC daily, after build-feed.yml's 06:00 UTC GMC run -- separate job, separate failure domain
+  workflow_dispatch: {}  # also runnable manually from the Actions tab
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+      - name: Build idealo feed from live Shopify data
+        env:
+          SHOPIFY_STORE_DOMAIN: ${{ secrets.SHOPIFY_STORE_DOMAIN }}
+          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
+          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
+        run: python idealo_feed.py --source shopify-api --market de
+
+      - name: Upload feed + report as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: idealo-feed-build-${{ github.run_number }}
+          path: |
+            data/idealo_feed.csv
+            data/idealo_feed_exclusions.csv
+            reports/*_idealo.md
+
+      - name: Commit idealo feed and report back to repo
+        if: always()
+        run: |
+          git config user.name "merchant-feed-sync-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/idealo_feed.csv data/idealo_feed_exclusions.csv reports/*_idealo.md
+          git diff --staged --quiet || git commit -m "idealo feed build ${{ github.run_id }}"
+          git push

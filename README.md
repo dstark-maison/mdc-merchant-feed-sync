@@ -167,6 +167,64 @@ no stale items from the old manual upload remain, and the "Improve item
 appearance" issues (missing description, etc.) are trending down as the new
 feed's real descriptions get processed.
 
+## idealo feed
+
+`idealo_feed.py` is a **standalone** sibling pipeline for the idealo
+Business Center CSV import -- it imports and reuses `build_feed`'s loaders
+and validators (`load_products_from_csv`, `load_products_from_shopify_api`,
+`validate_row`, `is_known_sample_value`, `gtin_checksum_valid`, `ProductRow`,
+`MARKETS`) so idealo and Google Merchant Center can never silently diverge
+on which offers are eligible, but it never modifies `build_feed.py` and
+never shares an output file, exclusions log, or report with it -- zero
+regression risk to the GMC pipeline that previously resolved a
+Misrepresentation suspension.
+
+Hosted feed URL:
+```
+https://raw.githubusercontent.com/dstark-maison/mdc-merchant-feed-sync/master/data/idealo_feed.csv
+```
+
+**Field mapping** (idealo CSV Feed Import spec -- comma-delimited, UTF-8,
+`;` for in-column lists):
+
+| idealo column | Source |
+|---|---|
+| `sku` | `id` |
+| `brand` | `brand` |
+| `title` | `title` |
+| `url` | `link` |
+| `eans` | `gtin` |
+| `description` | `description` |
+| `price` | `price_amount` (raw decimal, no "EUR" suffix) |
+| `categoryPath` | Shopify's product "Type" field, looked up by handle via idealo's own query/CSV column read -- left blank rather than guessed if the product has no Type set |
+| `size` | `size` |
+| `colour` | `color` |
+| `imageUrls` | `image_link` + `additional_image_link`, semicolon-joined (GMC's own column stays comma-joined) |
+| `delivery` | constant `"4-7 working days"` (matches this shop's GMC shipping policy: 1-2 day handling + 3-5 day transit) |
+| `paymentCosts_paypal`, `paymentCosts_credit_card` | constant `"0.00"` |
+
+**Shipping-tier logic** (`deliveryCosts_dpd`, matching the GMC/Business
+Center shipping policy -- never left blank, an unparseable price falls back
+to the top tier):
+
+| Price range | Cost |
+|---|---|
+| €0.01 – €700.00 | €10.00 |
+| €700.01 – €1,500.00 | €120.00 |
+| €1,500.01+ | €300.00 |
+
+Run locally the same way as `build_feed.py`:
+```bash
+python idealo_feed.py --source csv --csv-path export.csv          # offline
+python idealo_feed.py --source shopify-api --market de             # live
+```
+
+Output: `data/idealo_feed.csv`, `data/idealo_feed_exclusions.csv`, and
+`reports/YYYY-MM-DD_idealo.md`. Scheduled by its own workflow,
+`.github/workflows/build-idealo-feed.yml`, at 06:30 UTC daily (after
+`build-feed.yml`'s 06:00 UTC GMC build) -- a separate job so a failure in
+one pipeline can never block or break the other.
+
 ## Go-live checklist
 
 - [x] Create the "Merchant Feed Sync" Shopify custom app (`read_products` only)
