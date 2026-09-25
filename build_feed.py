@@ -130,15 +130,52 @@ MARKETS = {
     "en": {"locale": "en", "link_prefix": "/en", "countries": ["Germany", "Austria", "Belgium", "Luxembourg", "France"], "primary": True},
 }
 
+# ---------------------------------------------------------------------------
+# Per-product shipping override. Shopify delivery profiles are split by the
+# product's `vendor` field; this mirrors those live rates (confirmed in
+# Shopify Admin > Settings > Shipping) so each feed row carries its real
+# vendor rate instead of relying on GMC's single account-level flat rate. The
+# account-level GMC setting stays as the fallback and is managed outside this
+# repo. THIS IS THE ONLY PLACE the vendor list lives -- to onboard a vendor
+# (Robinil, Ribeco, ...), add one entry here once its delivery profile is
+# confirmed in Shopify. Keys must match Shopify's `vendor` string exactly.
+# ---------------------------------------------------------------------------
+VENDOR_SHIPPING_RATES = {
+    "Boomba Bamboo": 9.00,
+    "MoST Blankets": 9.90,
+    "Coco & Cici": 10.00,
+    "VIVARAISE": 15.00,
+    # Country-tiered vendor: dict of {country_code: rate}. Mirrors the
+    # "SalesFever — Orderchamp" delivery profile (DeliveryProfile/141017874765).
+    "SalesFever": {
+        "DE": 119.00,
+        "AT": 239.00, "BE": 239.00, "FR": 239.00, "LU": 239.00, "NL": 239.00,
+    },
+}
+SHIPPING_COUNTRIES = ["DE", "AT", "BE", "FR", "LU", "NL"]
+# Unknown vendor -> the safety-ceiling flat rate set at GMC account level, so
+# an unmapped vendor is never under-quoted.
+DEFAULT_SHIPPING_RATE = 15.00
+
+
+def build_shipping(vendor):
+    """One comma-separated `shipping` cell in Google's feed format
+    (country:region:service:price, region/service left blank):
+    'DE:::9.00 EUR,AT:::9.00 EUR,...'. A vendor's value is either a float
+    (flat across SHIPPING_COUNTRIES) or a {country: rate} dict; a country
+    missing from a dict falls back to DEFAULT_SHIPPING_RATE."""
+    rate = VENDOR_SHIPPING_RATES.get((vendor or "").strip(), DEFAULT_SHIPPING_RATE)
+    if isinstance(rate, dict):
+        return ",".join(f"{c}:::{rate.get(c, DEFAULT_SHIPPING_RATE):.2f} EUR" for c in SHIPPING_COUNTRIES)
+    return ",".join(f"{c}:::{rate:.2f} EUR" for c in SHIPPING_COUNTRIES)
+
+
 # EU 2019/771 gives every EU consumer a minimum 2-year statutory conformity
 # guarantee regardless of what a merchant's own return policy says. This is
-# informational metadata on rows only -- see Phase 1 finding: hasMerchantReturnPolicy
-# and shippingRate are already satisfied at the ACCOUNT level (Verified "Standard
-# for Germany" return policy + a Complete DE shipping service covering all
-# products), so this pipeline deliberately does NOT emit per-row
-# shipping/return-policy feed columns. Expanding account-level return/shipping
-# coverage to AT/FR/BE/LU is a manual Merchant Center follow-up, not something
-# this pipeline maps per-row.
+# informational metadata on rows only. Return-policy coverage is still handled
+# at the ACCOUNT level in Merchant Center (Verified "Standard for Germany"
+# policy); this pipeline emits no per-row return-policy column. Shipping is
+# now emitted per row -- see VENDOR_SHIPPING_RATES above.
 STATUTORY_GUARANTEE_YEARS = 2
 
 # ---------------------------------------------------------------------------
@@ -417,6 +454,7 @@ def load_products_from_csv(path):
             # present) -- left blank for CSV-sourced rows rather than guessed.
             # The shopify-api adapter is the source of truth for material.
             material="",
+            shipping=build_shipping(base["vendor"]),
         ))
     return rows
 
@@ -600,6 +638,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                     color=color,
                     size=size,
                     material=material,
+                    shipping=build_shipping(vendor),
                     translation_missing=translation_missing,
                 ))
         if not block["pageInfo"]["hasNextPage"]:
@@ -614,7 +653,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
 FEED_COLUMNS = [
     "id", "title", "description", "link", "image_link", "additional_image_link",
     "availability", "price", "brand", "condition", "gtin", "mpn", "item_group_id",
-    "color", "size", "material",
+    "color", "size", "material", "shipping",
 ]
 
 

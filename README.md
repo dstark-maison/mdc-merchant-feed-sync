@@ -41,15 +41,27 @@ steps are all on the Merchant Center side -- see the go-live checklist below.
    `example.com` links, all-zero GTINs, etc.) -- logged separately from
    ordinary validation failures, since this is the specific failure mode
    that caused the original account suspension.
-5. **Does NOT do per-row return-policy or shipping-rate mapping.** Phase 1
-   diagnosis (2026-08-16) found `hasMerchantReturnPolicy` and `shippingRate`
-   are already satisfied at the Merchant Center **account** level -- a
-   Verified "Standard for Germany" return policy and a Complete DE shipping
-   service, both already applied to all 22 products. This pipeline
-   deliberately does not duplicate that per row. It currently only covers
-   Germany; **expanding return/shipping coverage to AT/FR/BE/LU in Merchant
-   Center account settings is a manual follow-up for Daniel**, unrelated to
-   this pipeline.
+5. **Per-row shipping, but NOT per-row return policy.** Each row carries a
+   `shipping` cell built from the product's Shopify `vendor` via
+   `VENDOR_SHIPPING_RATES` in `build_feed.py` (the only place vendors are
+   listed), mirroring the Shopify delivery profiles. Format is one
+   comma-separated cell, `country:::price EUR` per country in
+   `SHIPPING_COUNTRIES` (DE, AT, BE, FR, LU, NL). A vendor's rate is either:
+   - **flat** -- a single float, same price for every country, e.g.
+     `"Boomba Bamboo": 9.00`; or
+   - **country-tiered** -- a `{country_code: rate}` dict, e.g. SalesFever:
+     DE 119.00, AT/BE/FR/LU/NL 239.00 (mirrors its "SalesFever -- Orderchamp"
+     delivery profile), giving
+     `DE:::119.00 EUR,AT:::239.00 EUR,BE:::239.00 EUR,...`.
+
+   A country missing from a tiered dict, and any vendor not in the map, fall
+   back to `DEFAULT_SHIPPING_RATE` (15.00) so nothing is under-quoted. To
+   onboard a vendor, add one entry once its delivery profile is confirmed.
+   Merchant Center **account-level** shipping settings are unchanged and stay
+   the fallback (managed outside this repo). Return policy is still handled
+   at the account level only (Verified "Standard for Germany" policy); this
+   pipeline emits no per-row return-policy column, and expanding return
+   coverage to AT/FR/BE/LU is a manual Merchant Center follow-up.
 
 ## Feed hosting
 
