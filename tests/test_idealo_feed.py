@@ -359,3 +359,52 @@ def test_pipeline_does_not_mutate_gmc_link(tmp_path):
     row = _pipeline_row("dc", "SKU-1")
     _run(tmp_path, [row], {}, {("dc", "SKU-1"): "101"})
     assert row["link"] == "https://www.maisondecocon.com/products/dc?variant_sku=SKU-1"
+
+
+# ---------------------------------------------------------------------------
+# SalesFever: country-tiered shipping (overrides price tiers)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("country,expected", [
+    ("DE", "119.00"), ("AT", "239.00"), ("BE", "239.00"),
+    ("FR", "239.00"), ("LU", "239.00"), ("NL", "239.00"),
+])
+def test_salesfever_shipping_by_country(country, expected):
+    row = build_feed.ProductRow(brand="SalesFever", price_amount="1716.00")
+    assert idealo_feed.shipping_cost_for_row(row, country) == expected
+
+
+def test_salesfever_ignores_price_tiers_in_default_feed_country():
+    # 356.00 would be tier 1 (10.00), 1796.00 top tier (300.00) for others.
+    for price in ("356.00", "796.00", "1796.00"):
+        row = build_feed.ProductRow(brand="SalesFever", price_amount=price)
+        assert idealo_feed.shipping_cost_for_row(row) == "119.00"
+
+
+def test_other_vendors_keep_price_tiers():
+    row = build_feed.ProductRow(brand="Coco & Cici", price_amount="179.95")
+    assert idealo_feed.shipping_cost_for_row(row) == "10.00"
+    row = build_feed.ProductRow(brand="Ángel Cerdá S.L.", price_amount="1600.00")
+    assert idealo_feed.shipping_cost_for_row(row) == "300.00"
+
+
+def test_vendor_rate_missing_for_country_fails_loudly():
+    row = build_feed.ProductRow(brand="SalesFever", price_amount="500.00")
+    with pytest.raises(ValueError):
+        idealo_feed.shipping_cost_for_row(row, "IT")
+
+
+def test_pipeline_writes_salesfever_shipping_once_published(tmp_path):
+    sf = _pipeline_row("velvet-shell-bed-140x200-cm", "398722")
+    sf["brand"] = "SalesFever"
+    sf["price_amount"] = "1716.00"
+    other = _pipeline_row("dc", "SKU-1")
+    stats, written, report = _run(
+        tmp_path, [sf, other],
+        {"velvet-shell-bed-140x200-cm": "Upholstered Beds", "dc": "Duvet Covers"},
+        {("velvet-shell-bed-140x200-cm", "398722"): "54825795715405"},
+    )
+    by_sku = {w["sku"]: w for w in written}
+    assert by_sku["398722"]["deliveryCosts_dpd"] == "119.00"
+    assert by_sku["398722"]["url"].endswith("?variant=54825795715405")
+    assert by_sku["398722"]["categoryPath"] == "Schlafzimmer > Betten > Polsterbetten"
+    assert by_sku["SKU-1"]["deliveryCosts_dpd"] == "10.00"

@@ -213,6 +213,17 @@ to the top tier):
 | €700.01 – €1,500.00 | €120.00 |
 | €1,500.01+ | €300.00 |
 
+**Vendor overrides** (`VENDOR_SHIPPING_BY_COUNTRY` in `idealo_feed.py`):
+some vendors are priced per destination country instead of by price tier,
+using the same rates as the Shopify/GMC shipping setup. The feed uses the
+rate for `FEED_COUNTRY` (`DE` -- the feed goes to idealo.de); a listed
+vendor missing a rate for that country fails the build instead of falling
+back to the price tiers.
+
+| Vendor | DE | AT / BE / FR / LU / NL |
+|---|---|---|
+| SalesFever | €119.00 | €239.00 |
+
 Run locally the same way as `build_feed.py`:
 ```bash
 python idealo_feed.py --source csv --csv-path export.csv          # offline

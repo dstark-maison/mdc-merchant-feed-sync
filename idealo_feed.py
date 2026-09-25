@@ -126,6 +126,7 @@ CATEGORY_PATHS_DE = {
     "Boxspring Beds": "Schlafzimmer > Betten > Boxspringbetten",
     "Upholstered Beds": "Schlafzimmer > Betten > Polsterbetten",
     "Headboards": "Schlafzimmer > Betten > Kopfteile",
+    "Bed Benches": "Schlafzimmer > Bettbänke",
 }
 
 # Flat shipping cost per offer, by price tier -- matches the GMC/Business
@@ -138,7 +139,44 @@ SHIPPING_TIERS = [
 ]
 SHIPPING_TOP_TIER = "300.00"
 
+# Country this feed is shown in. The feed is uploaded to idealo.de, whose
+# offers show the shipping cost to Germany; idealo runs a separate portal
+# (and feed) per country, so an idealo.at / idealo.fr feed would set this to
+# "AT" / "FR".
+FEED_COUNTRY = "DE"
+
+# Vendors whose shipping is priced per destination country instead of by
+# the price tiers above -- same rates as the Shopify/GMC shipping setup.
+# Keyed by the exact Shopify vendor name. Overrides SHIPPING_TIERS for that
+# vendor's offers in every feed country.
+VENDOR_SHIPPING_BY_COUNTRY = {
+    "SalesFever": {
+        "DE": "119.00",
+        "AT": "239.00",
+        "BE": "239.00",
+        "FR": "239.00",
+        "LU": "239.00",
+        "NL": "239.00",
+    },
+}
+
 PAYMENT_COST = "0.00"
+
+
+def shipping_cost_for_row(row, country=None):
+    """deliveryCosts_dpd for one offer. A vendor listed in
+    VENDOR_SHIPPING_BY_COUNTRY gets its rate for the feed's country;
+    everyone else gets the price-tier cost. A listed vendor with no rate for
+    the country is a config error and fails the build loudly rather than
+    silently falling back to the (much lower) price tiers."""
+    country = country or FEED_COUNTRY
+    vendor = (row.get("brand") or "").strip()
+    if vendor in VENDOR_SHIPPING_BY_COUNTRY:
+        rates = VENDOR_SHIPPING_BY_COUNTRY[vendor]
+        if country not in rates:
+            raise ValueError(f"No {country} shipping rate configured for vendor '{vendor}' in VENDOR_SHIPPING_BY_COUNTRY")
+        return rates[country]
+    return shipping_cost_for_price(row.get("price_amount"))
 
 
 def shipping_cost_for_price(price_amount):
@@ -338,7 +376,7 @@ def run_idealo_pipeline(rows, product_types, out_basename, run_label, variant_id
                 "categoryPath": category_path,
                 "size": row.get("size", ""),
                 "colour": row.get("color", ""),
-                "deliveryCosts_dpd": shipping_cost_for_price(row.get("price_amount")),
+                "deliveryCosts_dpd": shipping_cost_for_row(row),
                 "paymentCosts_paypal": PAYMENT_COST,
                 "paymentCosts_credit_card": PAYMENT_COST,
                 "delivery": DELIVERY_TEXT,
