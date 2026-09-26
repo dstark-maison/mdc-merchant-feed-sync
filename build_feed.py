@@ -90,20 +90,13 @@ API_VERSION = "2025-01"
 # source's target-country list is a manual dashboard step (see README) --
 # this pipeline never sets MC country targeting itself.
 #
-# Netherlands gets its OWN market entry ("nl", distinct from "be-nl")
-# because it must exclude the ~40 Ángel Cerdá S.L. products that the NL
-# Market Catalog already excludes at the Shopify level (live-verified
-# 2026-09-19: NL Market Catalog publication = 152 active products = 191
-# total active - 39 active Cerdá products; 0 Cerdá products present in that
-# publication). be-nl (Belgium, Dutch) is NOT a Cerdá-excluded market and
-# keeps including them -- untouched by this change.
-#
-# "en-nl" (English, Netherlands) is a SEPARATE market from "nl" (Dutch,
-# Netherlands) and from "en" (English, Germany/Austria/Belgium/Luxembourg/
-# France) -- it must NOT be folded into either. Folding it into "en" would
-# ship the ~40 excluded Cerdá products to English-language NL shoppers,
-# defeating the NL exclusion entirely; "nl" is Dutch-language only. Reuses
-# the same excluded_vendors mechanism "nl" uses -- no new filtering logic.
+# Netherlands gets its OWN market entries ("nl" Dutch, "en-nl" English), distinct
+# from "be-nl" and "en", so each keeps its own locale/link prefix. Until
+# 2026-09-26 both excluded the ~40 Ángel Cerdá S.L. products the NL Market
+# Catalog left out; that exclusion is retired (the Cerdá range is wound down,
+# 0 active Cerdá products, and the NL catalog is being opened to the full
+# catalog), so NL feeds now follow the same vendor rules as every other
+# market. The per-market "excluded_vendors" mechanism remains available.
 #
 # "primary": True (the "en" and "en-nl" entries) marks a market whose
 # locale is this shop's PRIMARY locale (confirmed via shopLocales:
@@ -125,8 +118,8 @@ MARKETS = {
     "de": {"locale": "de", "link_prefix": "", "countries": ["Germany", "Austria", "Luxembourg"]},
     "be-fr": {"locale": "fr", "link_prefix": "/fr", "countries": ["Belgium", "France"]},
     "be-nl": {"locale": "nl", "link_prefix": "/nl", "countries": ["Belgium"]},
-    "nl": {"locale": "nl", "link_prefix": "/nl", "countries": ["Netherlands"], "excluded_vendors": {"Ángel Cerdá S.L."}},
-    "en-nl": {"locale": "en", "link_prefix": "/en", "countries": ["Netherlands"], "excluded_vendors": {"Ángel Cerdá S.L."}, "primary": True},
+    "nl": {"locale": "nl", "link_prefix": "/nl", "countries": ["Netherlands"]},
+    "en-nl": {"locale": "en", "link_prefix": "/en", "countries": ["Netherlands"], "primary": True},
     "en": {"locale": "en", "link_prefix": "/en", "countries": ["Germany", "Austria", "Belgium", "Luxembourg", "France"], "primary": True},
 }
 
@@ -576,7 +569,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
             handle = node["handle"]
             vendor = (node.get("vendor") or "").strip()
             if vendor in excluded_vendors:
-                continue  # market-level vendor exclusion (e.g. NL excludes Ángel Cerdá S.L., per the NL Market Catalog)
+                continue  # market-level vendor exclusion (no market sets one at the moment)
             if is_primary:
                 title = node.get("title") or ""
                 description = strip_html(node.get("descriptionHtml") or "")
