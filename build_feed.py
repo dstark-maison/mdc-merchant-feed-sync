@@ -148,19 +148,16 @@ VENDOR_SHIPPING_LABELS = {
 DEFAULT_SHIPPING_LABEL = "std_default"
 
 # SalesFever has two Shopify delivery profiles: "SalesFever — Bulky"
-# (DeliveryProfile/141017874765, all 18 variants incl. the 6 Bed Benches) and
-# an empty shell "SalesFever — Small" (DeliveryProfile/141024461133).
-# 2026-09-26: the Bed Benches were briefly split into Small at 19.90/79 EUR
-# (Orderchamp-quoted), then reverted -- freight_tier (theme metafield, see
-# maison-de-cocon-shopify-theme/snippets/custom-freight-tier-price.liquid,
-# tier 8) still shows a uniform 119/239 for all 18 SalesFever products and
-# was never updated for a Small tier, so a bench split here would have
-# silently mismatched the live PDP shipping notice. Left EMPTY -- every
-# SalesFever product is sf_bulky -- until the bench rate is reconfirmed AND
-# freight_tier is updated to match. To re-split: add {"Bed Benches"} here,
-# move those 6 variants back to the Small delivery profile, and give them a
-# new freight_tier value with a matching case in custom-freight-tier-price.liquid.
-SALESFEVER_SMALL_TYPES = set()
+# (DeliveryProfile/141017874765, 12 beds) and "SalesFever — Small"
+# (DeliveryProfile/141024461133, the 6 Bed Benches, 19.90 EUR DE / 79 EUR
+# AT-BE-FR-LU-NL). Confirmed 2026-09-26 against the Orderchamp "Supported
+# Countries" table for the Storage Bed Bench (no per-unit surcharge). The
+# theme's freight_tier metafield now mirrors this: tier 8 = Bulky (119/239),
+# tier 9 = Small (19.90/79) -- see
+# maison-de-cocon-shopify-theme/snippets/custom-freight-tier-price.liquid.
+# If either delivery profile's rate changes, update both that snippet and
+# the SALESFEVER_RATES-equivalent GMC service, not just here.
+SALESFEVER_SMALL_TYPES = {"Bed Benches"}
 
 
 def shipping_label_for(vendor, product_type=""):

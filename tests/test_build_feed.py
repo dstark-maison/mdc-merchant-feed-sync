@@ -787,7 +787,7 @@ def test_run_pipeline_report_filenames_dont_collide_across_markets(tmp_path):
     ("Coco & Cici", "", "std_10"),
     ("VIVARAISE", "", "std_15"),
     ("SalesFever", "Upholstered Beds", "sf_bulky"),
-    ("SalesFever", "Bed Benches", "sf_bulky"),  # bench Small split reverted 2026-09-26, pending rate confirmation
+    ("SalesFever", "Bed Benches", "sf_small"),  # confirmed 2026-09-26 against Orderchamp's rate table
     ("SalesFever", "", "sf_bulky"),
     ("Testco", "", "std_default"),
     (None, "", "std_default"),

@@ -44,11 +44,11 @@ steps are all on the Merchant Center side -- see the go-live checklist below.
 5. **Shipping via `shipping_label`, NOT per-row shipping or return policy.**
    Each row carries a `shipping_label` from `shipping_label_for()` in
    `build_feed.py` (the only place vendors are listed): std_9 Boomba Bamboo,
-   std_990 MoST Blankets, std_10 Coco & Cici, std_15 VIVARAISE, `sf_bulky` for
-   every SalesFever product (a `sf_small` split for the 6 Bed Benches was
-   tried and reverted 2026-09-26 -- pending rate confirmation, see
-   `SALESFEVER_SMALL_TYPES` in `build_feed.py`), and `std_default` for any
-   unmapped vendor. There is NO per-row
+   std_990 MoST Blankets, std_10 Coco & Cici, std_15 VIVARAISE, and for
+   SalesFever, `sf_bulky` (beds) / `sf_small` (the 6 Bed Benches -- 19.90 EUR
+   DE / 79 EUR AT-BE-FR-LU-NL, confirmed 2026-09-26 against Orderchamp's own
+   rate table, see `SALESFEVER_SMALL_TYPES` in `build_feed.py`), and
+   `std_default` for any unmapped vendor. There is NO per-row
    `shipping` cell: shipping cost and delivery time come only from the
    account-level Merchant Center shipping services, each filtered to one label.
    To onboard a vendor, add its label here AND create its GMC service.
