@@ -779,48 +779,25 @@ def test_run_pipeline_report_filenames_dont_collide_across_markets(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# build_shipping -- flat and country-tiered vendor rates
+# shipping_label -- shipping cost/time live in GMC account-level services
 # ---------------------------------------------------------------------------
-def _expected_cell(rates):
-    return ",".join(f"{c}:::{rates[c]:.2f} EUR" for c in build_feed.SHIPPING_COUNTRIES)
+@pytest.mark.parametrize("vendor,ptype,label", [
+    ("Boomba Bamboo", "", "std_9"),
+    ("MoST Blankets", "", "std_990"),
+    ("Coco & Cici", "", "std_10"),
+    ("VIVARAISE", "", "std_15"),
+    ("SalesFever", "Upholstered Beds", "sf_bulky"),
+    ("SalesFever", "Bed Benches", "sf_small"),  # confirmed 2026-09-26 against Orderchamp's rate table
+    ("SalesFever", "", "sf_bulky"),
+    ("Testco", "", "std_default"),
+    (None, "", "std_default"),
+    ("", "", "std_default"),
+])
+def test_shipping_label_for(vendor, ptype, label):
+    assert build_feed.shipping_label_for(vendor, ptype) == label
 
 
-def test_build_shipping_flat_vendor_same_rate_for_all_countries():
-    assert build_feed.build_shipping("Boomba Bamboo") == _expected_cell(
-        {c: 9.00 for c in build_feed.SHIPPING_COUNTRIES}
-    )
-
-
-def test_build_shipping_tiered_vendor_salesfever():
-    cell = build_feed.build_shipping("SalesFever")
-    entries = dict(e.split(":::") for e in cell.split(","))
-    assert entries["DE"] == "119.00 EUR"
-    for country in ("AT", "BE", "FR", "LU", "NL"):
-        assert entries[country] == "239.00 EUR"
-    assert cell == "DE:::119.00 EUR,AT:::239.00 EUR,BE:::239.00 EUR,FR:::239.00 EUR,LU:::239.00 EUR,NL:::239.00 EUR"
-
-
-def test_build_shipping_unmapped_vendor_uses_default_rate():
-    assert build_feed.build_shipping("Testco") == _expected_cell(
-        {c: build_feed.DEFAULT_SHIPPING_RATE for c in build_feed.SHIPPING_COUNTRIES}
-    )
-    assert "15.00 EUR" in build_feed.build_shipping("Testco")
-
-
-def test_build_shipping_partial_tiered_dict_falls_back_per_country(monkeypatch):
-    monkeypatch.setitem(build_feed.VENDOR_SHIPPING_RATES, "Partialco", {"DE": 5.00, "AT": 6.00})
-    entries = dict(e.split(":::") for e in build_feed.build_shipping("Partialco").split(","))
-    assert entries["DE"] == "5.00 EUR"
-    assert entries["AT"] == "6.00 EUR"
-    for country in ("BE", "FR", "LU", "NL"):
-        assert entries[country] == f"{build_feed.DEFAULT_SHIPPING_RATE:.2f} EUR"
-
-
-@pytest.mark.parametrize("vendor", ["Boomba Bamboo", "SalesFever", "Testco", None, ""])
-def test_build_shipping_cell_shape_one_entry_per_country(vendor):
-    cell = build_feed.build_shipping(vendor)
-    assert isinstance(cell, str)
-    entries = cell.split(",")
-    assert len(entries) == len(build_feed.SHIPPING_COUNTRIES) == 6
-    assert [e.split(":::")[0] for e in entries] == build_feed.SHIPPING_COUNTRIES
-    assert all(e.count(":::") == 1 and e.endswith(" EUR") for e in entries)
+def test_feed_has_shipping_label_but_no_per_row_shipping_column():
+    assert "shipping_label" in build_feed.FEED_COLUMNS
+    assert "shipping" not in build_feed.FEED_COLUMNS
+    assert not hasattr(build_feed, "build_shipping")

@@ -41,27 +41,20 @@ steps are all on the Merchant Center side -- see the go-live checklist below.
    `example.com` links, all-zero GTINs, etc.) -- logged separately from
    ordinary validation failures, since this is the specific failure mode
    that caused the original account suspension.
-5. **Per-row shipping, but NOT per-row return policy.** Each row carries a
-   `shipping` cell built from the product's Shopify `vendor` via
-   `VENDOR_SHIPPING_RATES` in `build_feed.py` (the only place vendors are
-   listed), mirroring the Shopify delivery profiles. Format is one
-   comma-separated cell, `country:::price EUR` per country in
-   `SHIPPING_COUNTRIES` (DE, AT, BE, FR, LU, NL). A vendor's rate is either:
-   - **flat** -- a single float, same price for every country, e.g.
-     `"Boomba Bamboo": 9.00`; or
-   - **country-tiered** -- a `{country_code: rate}` dict, e.g. SalesFever:
-     DE 119.00, AT/BE/FR/LU/NL 239.00 (mirrors its "SalesFever -- Orderchamp"
-     delivery profile), giving
-     `DE:::119.00 EUR,AT:::239.00 EUR,BE:::239.00 EUR,...`.
-
-   A country missing from a tiered dict, and any vendor not in the map, fall
-   back to `DEFAULT_SHIPPING_RATE` (15.00) so nothing is under-quoted. To
-   onboard a vendor, add one entry once its delivery profile is confirmed.
-   Merchant Center **account-level** shipping settings are unchanged and stay
-   the fallback (managed outside this repo). Return policy is still handled
-   at the account level only (Verified "Standard for Germany" policy); this
-   pipeline emits no per-row return-policy column, and expanding return
-   coverage to AT/FR/BE/LU is a manual Merchant Center follow-up.
+5. **Shipping via `shipping_label`, NOT per-row shipping or return policy.**
+   Each row carries a `shipping_label` from `shipping_label_for()` in
+   `build_feed.py` (the only place vendors are listed): std_9 Boomba Bamboo,
+   std_990 MoST Blankets, std_10 Coco & Cici, std_15 VIVARAISE, and for
+   SalesFever, `sf_bulky` (beds) / `sf_small` (the 6 Bed Benches -- 19.90 EUR
+   DE / 79 EUR AT-BE-FR-LU-NL, confirmed 2026-09-26 against Orderchamp's own
+   rate table, see `SALESFEVER_SMALL_TYPES` in `build_feed.py`), and
+   `std_default` for any unmapped vendor. There is NO per-row
+   `shipping` cell: shipping cost and delivery time come only from the
+   account-level Merchant Center shipping services, each filtered to one label.
+   To onboard a vendor, add its label here AND create its GMC service.
+   Return policy is likewise account-level only (Verified "Standard for
+   Germany" policy); expanding return coverage to AT/FR/BE/LU is a manual
+   Merchant Center follow-up.
 
 ## Feed hosting
 
