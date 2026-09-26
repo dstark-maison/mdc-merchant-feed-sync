@@ -131,51 +131,53 @@ MARKETS = {
 }
 
 # ---------------------------------------------------------------------------
-# Per-product shipping override. Shopify delivery profiles are split by the
-# product's `vendor` field; this mirrors those live rates (confirmed in
-# Shopify Admin > Settings > Shipping) so each feed row carries its real
-# vendor rate instead of relying on GMC's single account-level flat rate. The
-# account-level GMC setting stays as the fallback and is managed outside this
-# repo. THIS IS THE ONLY PLACE the vendor list lives -- to onboard a vendor
-# (Robinil, Ribeco, ...), add one entry here once its delivery profile is
-# confirmed in Shopify. Keys must match Shopify's `vendor` string exactly.
+# Merchant Center `shipping_label` per product. Shipping cost and delivery time
+# live ONLY in the account-level Merchant Center shipping services (filtered by
+# label) -- this pipeline emits no per-row `shipping` cell.
+# THIS IS THE ONLY PLACE the vendor list lives -- to onboard a vendor, add one
+# entry here AND create its GMC service. Keys must match Shopify's `vendor`
+# string exactly. Unmapped vendors get DEFAULT_SHIPPING_LABEL (a GMC service
+# filtered to that label, 15 EUR flat).
 # ---------------------------------------------------------------------------
-VENDOR_SHIPPING_RATES = {
-    "Boomba Bamboo": 9.00,
-    "MoST Blankets": 9.90,
-    "Coco & Cici": 10.00,
-    "VIVARAISE": 15.00,
-    # Country-tiered vendor: dict of {country_code: rate}. Mirrors the
-    # "SalesFever — Orderchamp" delivery profile (DeliveryProfile/141017874765).
-    "SalesFever": {
-        "DE": 119.00,
-        "AT": 239.00, "BE": 239.00, "FR": 239.00, "LU": 239.00, "NL": 239.00,
-    },
+VENDOR_SHIPPING_LABELS = {
+    "Boomba Bamboo": "std_9",
+    "MoST Blankets": "std_990",
+    "Coco & Cici": "std_10",
+    "VIVARAISE": "std_15",
 }
-SHIPPING_COUNTRIES = ["DE", "AT", "BE", "FR", "LU", "NL"]
-# Unknown vendor -> the safety-ceiling flat rate set at GMC account level, so
-# an unmapped vendor is never under-quoted.
-DEFAULT_SHIPPING_RATE = 15.00
+DEFAULT_SHIPPING_LABEL = "std_default"
+
+# SalesFever has two Shopify delivery profiles: "SalesFever — Bulky"
+# (DeliveryProfile/141017874765, all 18 variants incl. the 6 Bed Benches) and
+# an empty shell "SalesFever — Small" (DeliveryProfile/141024461133).
+# 2026-09-26: the Bed Benches were briefly split into Small at 19.90/79 EUR
+# (Orderchamp-quoted), then reverted -- freight_tier (theme metafield, see
+# maison-de-cocon-shopify-theme/snippets/custom-freight-tier-price.liquid,
+# tier 8) still shows a uniform 119/239 for all 18 SalesFever products and
+# was never updated for a Small tier, so a bench split here would have
+# silently mismatched the live PDP shipping notice. Left EMPTY -- every
+# SalesFever product is sf_bulky -- until the bench rate is reconfirmed AND
+# freight_tier is updated to match. To re-split: add {"Bed Benches"} here,
+# move those 6 variants back to the Small delivery profile, and give them a
+# new freight_tier value with a matching case in custom-freight-tier-price.liquid.
+SALESFEVER_SMALL_TYPES = set()
 
 
-def build_shipping(vendor):
-    """One comma-separated `shipping` cell in Google's feed format
-    (country:region:service:price, region/service left blank):
-    'DE:::9.00 EUR,AT:::9.00 EUR,...'. A vendor's value is either a float
-    (flat across SHIPPING_COUNTRIES) or a {country: rate} dict; a country
-    missing from a dict falls back to DEFAULT_SHIPPING_RATE."""
-    rate = VENDOR_SHIPPING_RATES.get((vendor or "").strip(), DEFAULT_SHIPPING_RATE)
-    if isinstance(rate, dict):
-        return ",".join(f"{c}:::{rate.get(c, DEFAULT_SHIPPING_RATE):.2f} EUR" for c in SHIPPING_COUNTRIES)
-    return ",".join(f"{c}:::{rate:.2f} EUR" for c in SHIPPING_COUNTRIES)
+def shipping_label_for(vendor, product_type=""):
+    """Merchant Center shipping_label for a product; unmapped vendors get
+    DEFAULT_SHIPPING_LABEL so no product is ever unlabelled."""
+    vendor = (vendor or "").strip()
+    if vendor == "SalesFever":
+        return "sf_small" if (product_type or "").strip() in SALESFEVER_SMALL_TYPES else "sf_bulky"
+    return VENDOR_SHIPPING_LABELS.get(vendor, DEFAULT_SHIPPING_LABEL)
 
 
 # EU 2019/771 gives every EU consumer a minimum 2-year statutory conformity
 # guarantee regardless of what a merchant's own return policy says. This is
 # informational metadata on rows only. Return-policy coverage is still handled
 # at the ACCOUNT level in Merchant Center (Verified "Standard for Germany"
-# policy); this pipeline emits no per-row return-policy column. Shipping is
-# now emitted per row -- see VENDOR_SHIPPING_RATES above.
+# policy); this pipeline emits no per-row return-policy column. Shipping cost
+# and delivery time are account-level too, selected by shipping_label.
 STATUTORY_GUARANTEE_YEARS = 2
 
 # ---------------------------------------------------------------------------
@@ -410,8 +412,9 @@ def load_products_from_csv(path):
                 "title": raw["Title"].strip(),
                 "body_html": raw.get("Body (HTML)", "") or "",
                 "vendor": raw.get("Vendor", "").strip(),
+                "product_type": (raw.get("Type") or raw.get("Product Type") or "").strip(),
             }
-        base = carry.get(handle, {"title": "", "body_html": "", "vendor": ""})
+        base = carry.get(handle, {"title": "", "body_html": "", "vendor": "", "product_type": ""})
 
         sku = raw.get("Variant SKU", "").strip()
         if not sku:
@@ -454,7 +457,7 @@ def load_products_from_csv(path):
             # present) -- left blank for CSV-sourced rows rather than guessed.
             # The shopify-api adapter is the source of truth for material.
             material="",
-            shipping=build_shipping(base["vendor"]),
+            shipping_label=shipping_label_for(base["vendor"], base["product_type"]),
         ))
     return rows
 
@@ -495,6 +498,7 @@ query($cursor: String, $locale: String!) {
         title
         descriptionHtml
         vendor
+        productType
         status
         featuredImage { url }
         images(first: 11) { nodes { url } }
@@ -601,6 +605,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                     additional_images.append(img_url)
             additional_images = additional_images[:MAX_ADDITIONAL_IMAGES]
             material = (node.get("fabricMetafield") or {}).get("value") or ""
+            product_type = (node.get("productType") or "").strip()
             for vedge in node["variants"]["edges"]:
                 v = vedge["node"]
                 sku = (v.get("sku") or "").strip()
@@ -638,7 +643,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                     color=color,
                     size=size,
                     material=material,
-                    shipping=build_shipping(vendor),
+                    shipping_label=shipping_label_for(vendor, product_type),
                     translation_missing=translation_missing,
                 ))
         if not block["pageInfo"]["hasNextPage"]:
@@ -653,7 +658,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
 FEED_COLUMNS = [
     "id", "title", "description", "link", "image_link", "additional_image_link",
     "availability", "price", "brand", "condition", "gtin", "mpn", "item_group_id",
-    "color", "size", "material", "shipping",
+    "color", "size", "material", "shipping_label",
 ]
 
 
