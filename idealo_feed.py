@@ -98,6 +98,14 @@ IDEALO_COLUMNS = [
 # "4-7 working days" in Technical Account Management review.
 DELIVERY_TEXT = "4-7 Werktage"
 
+# Vendors whose delivery time differs from DELIVERY_TEXT, keyed by the exact
+# Shopify vendor name (same convention as VENDOR_SHIPPING_BY_COUNTRY).
+# SalesFever ships from the supplier: 6-11 working days handling + 3-5
+# transit = 9-16 working days, matching the PDP and Shopify's delivery window.
+VENDOR_DELIVERY_TEXT = {
+    "SalesFever": "9-16 Werktage",
+}
+
 # Shopify product Type (English, as set in Shopify) -> German idealo
 # categoryPath, levels separated by " > ". Explicit table, no machine
 # translation: a Type missing here yields a blank categoryPath and shows up
@@ -199,6 +207,13 @@ def shipping_cost_for_row(row, country=None, product_type=""):
             raise ValueError(f"No {country} shipping rate configured for vendor '{vendor}' in VENDOR_SHIPPING_BY_COUNTRY")
         return rates[country]
     return shipping_cost_for_price(row.get("price_amount"))
+
+
+def delivery_text_for_row(row):
+    """`delivery` for one offer: the vendor's own text if it is listed in
+    VENDOR_DELIVERY_TEXT (exact vendor name), else DELIVERY_TEXT."""
+    vendor = (row.get("brand") or "").strip()
+    return VENDOR_DELIVERY_TEXT.get(vendor, DELIVERY_TEXT)
 
 
 def shipping_cost_for_price(price_amount):
@@ -401,7 +416,7 @@ def run_idealo_pipeline(rows, product_types, out_basename, run_label, variant_id
                 "deliveryCosts_dpd": shipping_cost_for_row(row, product_type=product_type),
                 "paymentCosts_paypal": PAYMENT_COST,
                 "paymentCosts_credit_card": PAYMENT_COST,
-                "delivery": DELIVERY_TEXT,
+                "delivery": delivery_text_for_row(row),
                 "imageUrls": merge_image_urls(row),
             })
 

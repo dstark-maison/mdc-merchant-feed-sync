@@ -205,7 +205,7 @@ https://raw.githubusercontent.com/dstark-maison/mdc-merchant-feed-sync/master/da
 | `size` | `size` |
 | `colour` | `color` |
 | `imageUrls` | `image_link` + `additional_image_link`, semicolon-joined (GMC's own column stays comma-joined) |
-| `delivery` | constant `"4-7 Werktage"` -- German, as idealo requires (matches this shop's GMC shipping policy: 1-2 day handling + 3-5 day transit) |
+| `delivery` | `"4-7 Werktage"` -- German, as idealo requires (matches this shop's GMC shipping policy: 1-2 day handling + 3-5 day transit). Vendors in `VENDOR_DELIVERY_TEXT` (exact Shopify vendor name) get their own text instead: SalesFever `"9-16 Werktage"` (6-11 working days handling + 3-5 transit) |
 | `paymentCosts_paypal`, `paymentCosts_credit_card` | constant `"0.00"` |
 
 **Shipping-tier logic** (`deliveryCosts_dpd`, matching the GMC/Business
@@ -229,6 +229,14 @@ back to the price tiers.
 |---|---|---|---|
 | SalesFever | everything except Bed Benches | €119.00 | €239.00 |
 | SalesFever | Bed Benches (`SALESFEVER_SMALL_TYPES`) | €19.90 | €79.00 |
+
+**Delivery-time overrides** (`VENDOR_DELIVERY_TEXT` in `idealo_feed.py`):
+keyed on the exact vendor name like the shipping overrides above.
+
+| Vendor | `delivery` |
+|---|---|
+| SalesFever | `9-16 Werktage` |
+| everyone else | `4-7 Werktage` |
 
 Run locally the same way as `build_feed.py`:
 ```bash

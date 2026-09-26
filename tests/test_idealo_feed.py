@@ -436,3 +436,35 @@ def test_pipeline_writes_salesfever_shipping_once_published(tmp_path):
     assert by_sku["398722"]["url"].endswith("?variant=54825795715405")
     assert by_sku["398722"]["categoryPath"] == "Schlafzimmer > Betten > Polsterbetten"
     assert by_sku["SKU-1"]["deliveryCosts_dpd"] == "10.00"
+
+
+# ---------------------------------------------------------------------------
+# SalesFever: own delivery text (VENDOR_DELIVERY_TEXT), everyone else 4-7
+# ---------------------------------------------------------------------------
+def test_salesfever_delivery_text():
+    row = build_feed.ProductRow(brand="SalesFever")
+    assert idealo_feed.delivery_text_for_row(row) == "9-16 Werktage"
+
+
+@pytest.mark.parametrize("brand", ["Coco & Cici", "Ángel Cerdá S.L.", "salesfever", "SalesFever GmbH", "", None])
+def test_other_vendors_keep_default_delivery_text(brand):
+    # exact vendor-name match only: no case folding, no prefix matching
+    row = build_feed.ProductRow(brand=brand)
+    assert idealo_feed.delivery_text_for_row(row) == "4-7 Werktage"
+
+
+def test_pipeline_writes_delivery_per_vendor(tmp_path):
+    sf = _pipeline_row("velvet-shell-bed-140x200-cm", "398722")
+    sf["brand"] = "SalesFever"
+    bench = _pipeline_row("storage-bed-bench-white-boucle", "369470")
+    bench["brand"] = "SalesFever"
+    other = _pipeline_row("dc", "SKU-1")
+    stats, written, report = _run(
+        tmp_path, [sf, bench, other],
+        {"velvet-shell-bed-140x200-cm": "Upholstered Beds", "storage-bed-bench-white-boucle": "Bed Benches", "dc": "Duvet Covers"},
+        {("velvet-shell-bed-140x200-cm", "398722"): "1", ("storage-bed-bench-white-boucle", "369470"): "2"},
+    )
+    by_sku = {w["sku"]: w for w in written}
+    assert by_sku["398722"]["delivery"] == "9-16 Werktage"
+    assert by_sku["369470"]["delivery"] == "9-16 Werktage"
+    assert by_sku["SKU-1"]["delivery"] == "4-7 Werktage"
