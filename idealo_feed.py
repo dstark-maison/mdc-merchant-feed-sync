@@ -160,17 +160,39 @@ VENDOR_SHIPPING_BY_COUNTRY = {
     },
 }
 
+# SalesFever Shopify Types priced on the Small delivery profile instead of
+# VENDOR_SHIPPING_BY_COUNTRY's Bulky rate above -- mirrors build_feed.py's
+# SALESFEVER_SMALL_TYPES / GMC's sf_small label. Rate confirmed 2026-09-26
+# against the Orderchamp "Supported Countries" table for the Storage Bed
+# Bench (no per-unit surcharge).
+SALESFEVER_SMALL_TYPES = {"Bed Benches"}
+SALESFEVER_SMALL_SHIPPING_BY_COUNTRY = {
+    "DE": "19.90",
+    "AT": "79.00",
+    "BE": "79.00",
+    "FR": "79.00",
+    "LU": "79.00",
+    "NL": "79.00",
+}
+
 PAYMENT_COST = "0.00"
 
 
-def shipping_cost_for_row(row, country=None):
+def shipping_cost_for_row(row, country=None, product_type=""):
     """deliveryCosts_dpd for one offer. A vendor listed in
-    VENDOR_SHIPPING_BY_COUNTRY gets its rate for the feed's country;
-    everyone else gets the price-tier cost. A listed vendor with no rate for
-    the country is a config error and fails the build loudly rather than
-    silently falling back to the (much lower) price tiers."""
+    VENDOR_SHIPPING_BY_COUNTRY gets its rate for the feed's country (a
+    SalesFever offer whose product_type is in SALESFEVER_SMALL_TYPES gets
+    SALESFEVER_SMALL_SHIPPING_BY_COUNTRY instead); everyone else gets the
+    price-tier cost. A listed vendor with no rate for the country is a
+    config error and fails the build loudly rather than silently falling
+    back to the (much lower) price tiers."""
     country = country or FEED_COUNTRY
     vendor = (row.get("brand") or "").strip()
+    if vendor == "SalesFever" and (product_type or "").strip() in SALESFEVER_SMALL_TYPES:
+        rates = SALESFEVER_SMALL_SHIPPING_BY_COUNTRY
+        if country not in rates:
+            raise ValueError(f"No {country} shipping rate configured for vendor '{vendor}' Bed Benches in SALESFEVER_SMALL_SHIPPING_BY_COUNTRY")
+        return rates[country]
     if vendor in VENDOR_SHIPPING_BY_COUNTRY:
         rates = VENDOR_SHIPPING_BY_COUNTRY[vendor]
         if country not in rates:
@@ -376,7 +398,7 @@ def run_idealo_pipeline(rows, product_types, out_basename, run_label, variant_id
                 "categoryPath": category_path,
                 "size": row.get("size", ""),
                 "colour": row.get("color", ""),
-                "deliveryCosts_dpd": shipping_cost_for_row(row),
+                "deliveryCosts_dpd": shipping_cost_for_row(row, product_type=product_type),
                 "paymentCosts_paypal": PAYMENT_COST,
                 "paymentCosts_credit_card": PAYMENT_COST,
                 "delivery": DELIVERY_TEXT,

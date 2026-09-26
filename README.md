@@ -220,9 +220,10 @@ rate for `FEED_COUNTRY` (`DE` -- the feed goes to idealo.de); a listed
 vendor missing a rate for that country fails the build instead of falling
 back to the price tiers.
 
-| Vendor | DE | AT / BE / FR / LU / NL |
-|---|---|---|
-| SalesFever | €119.00 | €239.00 |
+| Vendor | Type | DE | AT / BE / FR / LU / NL |
+|---|---|---|---|
+| SalesFever | everything except Bed Benches | €119.00 | €239.00 |
+| SalesFever | Bed Benches (`SALESFEVER_SMALL_TYPES`) | €19.90 | €79.00 |
 
 Run locally the same way as `build_feed.py`:
 ```bash

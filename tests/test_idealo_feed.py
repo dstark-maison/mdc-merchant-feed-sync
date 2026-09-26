@@ -393,6 +393,34 @@ def test_vendor_rate_missing_for_country_fails_loudly():
         idealo_feed.shipping_cost_for_row(row, "IT")
 
 
+@pytest.mark.parametrize("country,expected", [
+    ("DE", "19.90"), ("AT", "79.00"), ("BE", "79.00"),
+    ("FR", "79.00"), ("LU", "79.00"), ("NL", "79.00"),
+])
+def test_salesfever_bed_benches_use_small_rate(country, expected):
+    row = build_feed.ProductRow(brand="SalesFever", price_amount="199.00")
+    assert idealo_feed.shipping_cost_for_row(row, country, product_type="Bed Benches") == expected
+
+
+def test_salesfever_non_bench_types_stay_on_bulky_rate():
+    row = build_feed.ProductRow(brand="SalesFever", price_amount="1716.00")
+    for product_type in ("Upholstered Beds", "", "Something New"):
+        assert idealo_feed.shipping_cost_for_row(row, product_type=product_type) == "119.00"
+
+
+def test_pipeline_writes_salesfever_bench_small_rate(tmp_path):
+    bench = _pipeline_row("storage-bed-bench-white-boucle", "369470")
+    bench["brand"] = "SalesFever"
+    bench["price_amount"] = "199.00"
+    stats, written, report = _run(
+        tmp_path, [bench],
+        {"storage-bed-bench-white-boucle": "Bed Benches"},
+        {("storage-bed-bench-white-boucle", "369470"): "54827363696973"},
+    )
+    by_sku = {w["sku"]: w for w in written}
+    assert by_sku["369470"]["deliveryCosts_dpd"] == "19.90"
+
+
 def test_pipeline_writes_salesfever_shipping_once_published(tmp_path):
     sf = _pipeline_row("velvet-shell-bed-140x200-cm", "398722")
     sf["brand"] = "SalesFever"
