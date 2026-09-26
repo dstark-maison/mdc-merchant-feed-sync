@@ -801,3 +801,9 @@ def test_feed_has_shipping_label_but_no_per_row_shipping_column():
     assert "shipping_label" in build_feed.FEED_COLUMNS
     assert "shipping" not in build_feed.FEED_COLUMNS
     assert not hasattr(build_feed, "build_shipping")
+
+
+def test_nl_markets_no_longer_exclude_any_vendor():
+    # The Cerdá exclusion on the NL feeds was retired 2026-09-26 (NL now gets the full catalog).
+    for market in ("nl", "en-nl"):
+        assert not build_feed.MARKETS[market].get("excluded_vendors")
