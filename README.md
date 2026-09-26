@@ -197,15 +197,15 @@ https://raw.githubusercontent.com/dstark-maison/mdc-merchant-feed-sync/master/da
 | `sku` | `id` |
 | `brand` | `brand` |
 | `title` | `title` |
-| `url` | `link` |
+| `url` | `link`, rewritten to Shopify's native variant deep link `?variant=<numeric variant id>` (the `?variant_sku=` param in `link` is ignored by the theme, so it opened the default variant). Variant ids come from idealo's own lookup query; a row without one keeps `link` and is counted in the report. `--source csv` has no variant ids (Shopify's export doesn't carry them) |
 | `eans` | `gtin` |
 | `description` | `description` |
 | `price` | `price_amount` (raw decimal, no "EUR" suffix) |
-| `categoryPath` | Shopify's product "Type" field, looked up by handle via idealo's own query/CSV column read -- left blank rather than guessed if the product has no Type set |
+| `categoryPath` | Shopify's product "Type" field (English), looked up by handle via idealo's own query/CSV column read, then translated to a German path via the explicit `CATEGORY_PATHS_DE` table in `idealo_feed.py` (e.g. `Duvet Covers` -> `Heimtextilien > Bettwäsche > Bettbezüge`). Blank rather than guessed or sent in English if the product has no Type or the Type isn't in the table; unmapped Types are listed in the report so the table can be extended |
 | `size` | `size` |
 | `colour` | `color` |
 | `imageUrls` | `image_link` + `additional_image_link`, semicolon-joined (GMC's own column stays comma-joined) |
-| `delivery` | constant `"4-7 working days"` (matches this shop's GMC shipping policy: 1-2 day handling + 3-5 day transit) |
+| `delivery` | constant `"4-7 Werktage"` -- German, as idealo requires (matches this shop's GMC shipping policy: 1-2 day handling + 3-5 day transit) |
 | `paymentCosts_paypal`, `paymentCosts_credit_card` | constant `"0.00"` |
 
 **Shipping-tier logic** (`deliveryCosts_dpd`, matching the GMC/Business
@@ -217,6 +217,18 @@ to the top tier):
 | €0.01 – €700.00 | €10.00 |
 | €700.01 – €1,500.00 | €120.00 |
 | €1,500.01+ | €300.00 |
+
+**Vendor overrides** (`VENDOR_SHIPPING_BY_COUNTRY` in `idealo_feed.py`):
+some vendors are priced per destination country instead of by price tier,
+using the same rates as the Shopify/GMC shipping setup. The feed uses the
+rate for `FEED_COUNTRY` (`DE` -- the feed goes to idealo.de); a listed
+vendor missing a rate for that country fails the build instead of falling
+back to the price tiers.
+
+| Vendor | Type | DE | AT / BE / FR / LU / NL |
+|---|---|---|---|
+| SalesFever | everything except Bed Benches | €119.00 | €239.00 |
+| SalesFever | Bed Benches (`SALESFEVER_SMALL_TYPES`) | €19.90 | €79.00 |
 
 Run locally the same way as `build_feed.py`:
 ```bash
