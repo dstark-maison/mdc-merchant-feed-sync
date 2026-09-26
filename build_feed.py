@@ -90,15 +90,15 @@ API_VERSION = "2025-01"
 # source's target-country list is a manual dashboard step (see README) --
 # this pipeline never sets MC country targeting itself.
 #
-# Netherlands gets its OWN market entries ("nl" Dutch, "en-nl" English), distinct
-# from "be-nl" and "en", so each keeps its own locale/link prefix. Until
-# 2026-09-26 both excluded the ~40 Ángel Cerdá S.L. products the NL Market
-# Catalog left out; that exclusion is retired (the Cerdá range is wound down,
-# 0 active Cerdá products, and the NL catalog is being opened to the full
-# catalog), so NL feeds now follow the same vendor rules as every other
-# market. The per-market "excluded_vendors" mechanism remains available.
+# Netherlands has no feed of its own: Belgium (Dutch) and Netherlands (Dutch)
+# produce byte-identical rows -- the product links are www.maisondecocon.com/nl
+# for both, because every non-DE market shares one web presence and Shopify
+# picks the market from the visitor's country, not from the URL -- and likewise
+# English (Germany/Austria/Belgium/Luxembourg/France) and Netherlands (English).
+# So "be-nl" and "en" also carry Netherlands as a target country, and the
+# separate "nl" / "en-nl" builds (and Merchant Center sources) were retired.
 #
-# "primary": True (the "en" and "en-nl" entries) marks a market whose
+# "primary": True (the "en" entry) marks a market whose
 # locale is this shop's PRIMARY locale (confirmed via shopLocales:
 # en.primary == true). Shopify never stores a translations() record for
 # the primary locale -- translations(locale: "en") returns [] for every
@@ -112,15 +112,13 @@ API_VERSION = "2025-01"
 # rows already do). Getting this wrong would silently ship an empty feed:
 # every row would read translation_missing=True and 0 products would be
 # accepted -- verified this would happen before adding "en" here, and the
-# same is true for any other locale=="en" market, including "en-nl".
+# same is true for any other locale=="en" market, including any future one.
 # ---------------------------------------------------------------------------
 MARKETS = {
     "de": {"locale": "de", "link_prefix": "", "countries": ["Germany", "Austria", "Luxembourg"]},
     "be-fr": {"locale": "fr", "link_prefix": "/fr", "countries": ["Belgium", "France"]},
-    "be-nl": {"locale": "nl", "link_prefix": "/nl", "countries": ["Belgium"]},
-    "nl": {"locale": "nl", "link_prefix": "/nl", "countries": ["Netherlands"]},
-    "en-nl": {"locale": "en", "link_prefix": "/en", "countries": ["Netherlands"], "primary": True},
-    "en": {"locale": "en", "link_prefix": "/en", "countries": ["Germany", "Austria", "Belgium", "Luxembourg", "France"], "primary": True},
+    "be-nl": {"locale": "nl", "link_prefix": "/nl", "countries": ["Belgium", "Netherlands"]},
+    "en": {"locale": "en", "link_prefix": "/en", "countries": ["Germany", "Austria", "Belgium", "Luxembourg", "France", "Netherlands"], "primary": True},
 }
 
 # ---------------------------------------------------------------------------
