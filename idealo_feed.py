@@ -98,6 +98,14 @@ IDEALO_COLUMNS = [
 # "4-7 working days" in Technical Account Management review.
 DELIVERY_TEXT = "4-7 Werktage"
 
+# Vendors whose delivery time differs from DELIVERY_TEXT, keyed by the exact
+# Shopify vendor name (same convention as VENDOR_SHIPPING_BY_COUNTRY).
+# SalesFever ships from the supplier: 6-11 working days handling + 3-5
+# transit = 9-16 working days, matching the PDP and Shopify's delivery window.
+VENDOR_DELIVERY_TEXT = {
+    "SalesFever": "9-16 Werktage",
+}
+
 # Shopify product Type (English, as set in Shopify) -> German idealo
 # categoryPath, levels separated by " > ". Explicit table, no machine
 # translation: a Type missing here yields a blank categoryPath and shows up
@@ -199,6 +207,13 @@ def shipping_cost_for_row(row, country=None, product_type=""):
             raise ValueError(f"No {country} shipping rate configured for vendor '{vendor}' in VENDOR_SHIPPING_BY_COUNTRY")
         return rates[country]
     return shipping_cost_for_price(row.get("price_amount"))
+
+
+def delivery_text_for_row(row):
+    """`delivery` for one offer: the vendor's own text if it is listed in
+    VENDOR_DELIVERY_TEXT (exact vendor name), else DELIVERY_TEXT."""
+    vendor = (row.get("brand") or "").strip()
+    return VENDOR_DELIVERY_TEXT.get(vendor, DELIVERY_TEXT)
 
 
 def shipping_cost_for_price(price_amount):
@@ -352,7 +367,7 @@ def run_idealo_pipeline(rows, product_types, out_basename, run_label, variant_id
     numeric variant id}; None/{} means no variant deep links are available
     (e.g. --source csv) and build_feed's links are kept as-is."""
     variant_ids = variant_ids or {}
-    accepted, excluded, sample_rejected = [], [], []
+    accepted, excluded, sample_rejected, out_of_stock = [], [], [], []
     unmapped_types = {}      # English Type -> number of accepted offers affected
     no_type_handles = set()  # handles with no Shopify Type at all
     missing_variant_ids = []  # accepted rows whose url couldn't be deep-linked
@@ -361,6 +376,12 @@ def run_idealo_pipeline(rows, product_types, out_basename, run_label, variant_id
         sample_reason = is_known_sample_value(row)
         if sample_reason:
             sample_rejected.append((row, sample_reason))
+            continue
+
+        # idealo's feed has no availability field, so a sold-out offer would
+        # be listed as buyable -- skip it (every vendor) until it is back in stock.
+        if (row.get("availability") or "").strip() == "out_of_stock":
+            out_of_stock.append(row)
             continue
 
         is_valid, reasons = validate_row(row)
@@ -401,7 +422,7 @@ def run_idealo_pipeline(rows, product_types, out_basename, run_label, variant_id
                 "deliveryCosts_dpd": shipping_cost_for_row(row, product_type=product_type),
                 "paymentCosts_paypal": PAYMENT_COST,
                 "paymentCosts_credit_card": PAYMENT_COST,
-                "delivery": DELIVERY_TEXT,
+                "delivery": delivery_text_for_row(row),
                 "imageUrls": merge_image_urls(row),
             })
 
@@ -413,6 +434,8 @@ def run_idealo_pipeline(rows, product_types, out_basename, run_label, variant_id
             writer.writerow([row.get("id", ""), row.get("title", ""), "; ".join(reasons), "validation"])
         for row, reason in sample_rejected:
             writer.writerow([row.get("id", ""), row.get("title", ""), reason, "sample_data"])
+        for row in out_of_stock:
+            writer.writerow([row.get("id", ""), row.get("title", ""), "availability out_of_stock", "out_of_stock"])
 
     report_lines = [
         f"# idealo feed build report -- {run_label}",
@@ -421,6 +444,7 @@ def run_idealo_pipeline(rows, product_types, out_basename, run_label, variant_id
         f"- Accepted into feed: {len(accepted)}",
         f"- Excluded (validation failures): {len(excluded)}",
         f"- Rejected (known Google sample/placeholder data): {len(sample_rejected)}",
+        f"- Skipped (out of stock, not offered on idealo): {len(out_of_stock)}",
         f"- Accepted offers without a variant deep link (url falls back to product page): {len(missing_variant_ids)}",
         f"- Accepted offers with blank categoryPath (no Type / unmapped Type): "
         f"{sum(1 for r in accepted if not german_category_path(product_types.get(r.get('handle', ''), '')))}",
@@ -453,6 +477,12 @@ def run_idealo_pipeline(rows, product_types, out_basename, run_label, variant_id
         for row, reason in sample_rejected:
             report_lines.append(f"- `{row.get('id')}` {row.get('title')}: {reason}")
         report_lines.append("")
+    if out_of_stock:
+        report_lines.append(f"## Skipped: out of stock ({len(out_of_stock)})")
+        report_lines.append("idealo's feed has no availability field, so these offers are left out until they are back in stock:")
+        for row in out_of_stock:
+            report_lines.append(f"- `{row.get('id')}` ({row.get('brand') or 'no brand'}) {row.get('title')}")
+        report_lines.append("")
     if excluded:
         report_lines.append(f"## Validation exclusions ({len(excluded)})")
         for row, reasons in excluded:
@@ -467,6 +497,7 @@ def run_idealo_pipeline(rows, product_types, out_basename, run_label, variant_id
         "accepted": len(accepted),
         "excluded": len(excluded),
         "sample_rejected": len(sample_rejected),
+        "out_of_stock": len(out_of_stock),
         "missing_variant_ids": len(missing_variant_ids),
         "unmapped_types": dict(unmapped_types),
         "feed_path": feed_path,
