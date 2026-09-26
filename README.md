@@ -230,6 +230,12 @@ back to the price tiers.
 | SalesFever | everything except Bed Benches | €119.00 | €239.00 |
 | SalesFever | Bed Benches (`SALESFEVER_SMALL_TYPES`) | €19.90 | €79.00 |
 
+**Out-of-stock offers** are skipped for every vendor: idealo's feed has no
+availability field, so a sold-out offer would otherwise be listed as buyable.
+They are written to `idealo_feed_exclusions.csv` (category `out_of_stock`) and
+listed in the report under "Skipped: out of stock"; they come back on the next
+build once Shopify shows stock again.
+
 **Delivery-time overrides** (`VENDOR_DELIVERY_TEXT` in `idealo_feed.py`):
 keyed on the exact vendor name like the shipping overrides above.
 
