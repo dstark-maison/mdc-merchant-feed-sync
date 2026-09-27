@@ -7,8 +7,9 @@ deliberate design: GMC previously triggered a Misrepresentation suspension
 that took real work to resolve, so this file must carry zero regression risk
 to that pipeline. It imports and reuses build_feed's loaders/validators --
 load_products_from_csv, load_products_from_shopify_api, validate_row,
-is_known_sample_value, gtin_checksum_valid, ProductRow, MARKETS -- so idealo
-and GMC can never silently diverge on which offers are eligible, but it never
+is_known_sample_value, gtin_checksum_valid, shipping_label_for, ProductRow,
+MARKETS -- so idealo and GMC can never silently diverge on which offers are
+eligible or which vendor gets which shipping treatment, but it never
 modifies build_feed.py and never shares an output file, exclusions log, or
 report with it.
 
@@ -71,6 +72,7 @@ from build_feed import (
     ProductRow,  # noqa: F401  -- re-exported for parity with build_feed's shape; not constructed directly here
     gtin_checksum_valid,  # noqa: F401  -- reused indirectly via validate_row/loaders; kept importable for tests
     is_known_sample_value,
+    shipping_label_for,
     validate_row,
     load_products_from_csv,
     load_products_from_shopify_api,
@@ -99,7 +101,7 @@ IDEALO_COLUMNS = [
 DELIVERY_TEXT = "4-7 Werktage"
 
 # Vendors whose delivery time differs from DELIVERY_TEXT, keyed by the exact
-# Shopify vendor name (same convention as VENDOR_SHIPPING_BY_COUNTRY).
+# Shopify vendor name (same convention as IDEALO_SHIPPING_RATES_DE below).
 # SalesFever ships from the supplier: 6-11 working days handling + 3-5
 # transit = 9-16 working days, matching the PDP and Shopify's delivery window.
 VENDOR_DELIVERY_TEXT = {
@@ -137,76 +139,48 @@ CATEGORY_PATHS_DE = {
     "Bed Benches": "Schlafzimmer > Bettbänke",
 }
 
-# Flat shipping cost per offer, by price tier -- matches the GMC/Business
-# Center shipping policy: (inclusive upper bound, cost). Anything above the
-# last bound, or a price that doesn't parse, falls to SHIPPING_TOP_TIER --
-# deliveryCosts_dpd must never be blank.
-SHIPPING_TIERS = [
-    (700.00, "10.00"),
-    (1500.00, "120.00"),
-]
-SHIPPING_TOP_TIER = "300.00"
-
-# Country this feed is shown in. The feed is uploaded to idealo.de, whose
-# offers show the shipping cost to Germany; idealo runs a separate portal
-# (and feed) per country, so an idealo.at / idealo.fr feed would set this to
-# "AT" / "FR".
-FEED_COUNTRY = "DE"
-
-# Vendors whose shipping is priced per destination country instead of by
-# the price tiers above -- same rates as the Shopify/GMC shipping setup.
-# Keyed by the exact Shopify vendor name. Overrides SHIPPING_TIERS for that
-# vendor's offers in every feed country.
-VENDOR_SHIPPING_BY_COUNTRY = {
-    "SalesFever": {
-        "DE": "119.00",
-        "AT": "239.00",
-        "BE": "239.00",
-        "FR": "239.00",
-        "LU": "239.00",
-        "NL": "239.00",
-    },
-}
-
-# SalesFever Shopify Types priced on the Small delivery profile instead of
-# VENDOR_SHIPPING_BY_COUNTRY's Bulky rate above -- mirrors build_feed.py's
-# SALESFEVER_SMALL_TYPES / GMC's sf_small label. Rate confirmed 2026-09-26
-# against the Orderchamp "Supported Countries" table for the Storage Bed
-# Bench (no per-unit surcharge).
-SALESFEVER_SMALL_TYPES = {"Bed Benches"}
-SALESFEVER_SMALL_SHIPPING_BY_COUNTRY = {
-    "DE": "19.90",
-    "AT": "79.00",
-    "BE": "79.00",
-    "FR": "79.00",
-    "LU": "79.00",
-    "NL": "79.00",
+# deliveryCosts_dpd per offer, keyed by Merchant Center shipping_label.
+# build_feed.shipping_label_for(vendor, product_type) is the single source of
+# truth for which label a vendor/product gets (THE place to onboard a vendor
+# -- see its docstring and VENDOR_SHIPPING_LABELS in build_feed.py); this
+# table only translates a label into what idealo.de itself charges for it,
+# confirmed 2026-09-27 against live DE checkout for one order per label.
+# idealo runs a separate portal (and feed) per country and this feed is only
+# ever uploaded to idealo.de, so -- unlike GMC's per-country services --
+# there is exactly one rate per label, not one per (label, country).
+# A label with no entry here (including DEFAULT_SHIPPING_LABEL, i.e. a
+# vendor build_feed.VENDOR_SHIPPING_LABELS doesn't know about) is a config
+# gap and must fail the build loudly rather than silently default -- see
+# shipping_cost_for_row.
+IDEALO_SHIPPING_RATES_DE = {
+    "std_9": "9.00",
+    "std_990": "9.90",
+    "std_10": "10.00",
+    "sf_bulky": "119.00",
+    "sf_small": "19.90",
 }
 
 PAYMENT_COST = "0.00"
 
 
-def shipping_cost_for_row(row, country=None, product_type=""):
-    """deliveryCosts_dpd for one offer. A vendor listed in
-    VENDOR_SHIPPING_BY_COUNTRY gets its rate for the feed's country (a
-    SalesFever offer whose product_type is in SALESFEVER_SMALL_TYPES gets
-    SALESFEVER_SMALL_SHIPPING_BY_COUNTRY instead); everyone else gets the
-    price-tier cost. A listed vendor with no rate for the country is a
-    config error and fails the build loudly rather than silently falling
-    back to the (much lower) price tiers."""
-    country = country or FEED_COUNTRY
+def shipping_cost_for_row(row, product_type=""):
+    """deliveryCosts_dpd for one offer: looks up build_feed.shipping_label_for's
+    Merchant Center shipping_label in IDEALO_SHIPPING_RATES_DE. Reusing
+    shipping_label_for (rather than a second vendor table here) means idealo
+    and GMC can never silently diverge on which vendor gets which shipping
+    treatment. A label with no idealo DE rate -- a genuinely new vendor
+    (DEFAULT_SHIPPING_LABEL) or a label onboarded to GMC but not here (e.g.
+    "std_15") -- is a config gap and fails the build loudly rather than ever
+    guessing a rate."""
     vendor = (row.get("brand") or "").strip()
-    if vendor == "SalesFever" and (product_type or "").strip() in SALESFEVER_SMALL_TYPES:
-        rates = SALESFEVER_SMALL_SHIPPING_BY_COUNTRY
-        if country not in rates:
-            raise ValueError(f"No {country} shipping rate configured for vendor '{vendor}' Bed Benches in SALESFEVER_SMALL_SHIPPING_BY_COUNTRY")
-        return rates[country]
-    if vendor in VENDOR_SHIPPING_BY_COUNTRY:
-        rates = VENDOR_SHIPPING_BY_COUNTRY[vendor]
-        if country not in rates:
-            raise ValueError(f"No {country} shipping rate configured for vendor '{vendor}' in VENDOR_SHIPPING_BY_COUNTRY")
-        return rates[country]
-    return shipping_cost_for_price(row.get("price_amount"))
+    label = shipping_label_for(vendor, product_type)
+    try:
+        return IDEALO_SHIPPING_RATES_DE[label]
+    except KeyError:
+        raise ValueError(
+            f"No idealo DE shipping rate configured for shipping_label '{label}' "
+            f"(vendor '{vendor}'); add it to IDEALO_SHIPPING_RATES_DE"
+        )
 
 
 def delivery_text_for_row(row):
@@ -214,20 +188,6 @@ def delivery_text_for_row(row):
     VENDOR_DELIVERY_TEXT (exact vendor name), else DELIVERY_TEXT."""
     vendor = (row.get("brand") or "").strip()
     return VENDOR_DELIVERY_TEXT.get(vendor, DELIVERY_TEXT)
-
-
-def shipping_cost_for_price(price_amount):
-    """Flat deliveryCosts_dpd for one offer, per the tiered policy above.
-    An unparseable/missing price falls back to the top tier rather than
-    ever leaving this column blank."""
-    try:
-        price = float(price_amount)
-    except (TypeError, ValueError):
-        return SHIPPING_TOP_TIER
-    for ceiling, cost in SHIPPING_TIERS:
-        if price <= ceiling:
-            return cost
-    return SHIPPING_TOP_TIER
 
 
 def merge_image_urls(row):

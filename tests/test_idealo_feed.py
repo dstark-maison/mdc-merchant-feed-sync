@@ -2,11 +2,12 @@
 Tests for idealo_feed.py.
 
 Same style as tests/test_build_feed.py (plain pytest, tmp_path fixtures).
-Covers idealo's own logic only -- shipping-tier boundaries, the imageUrls
-semicolon-join, categoryPath mapping (both CSV and mocked shopify-api
-sources), and one end-to-end run against the shared fixture CSV. Does NOT
-re-test build_feed's own loaders/validators (already covered by
-test_build_feed.py) beyond confirming idealo_feed calls them correctly.
+Covers idealo's own logic only -- shipping_label -> idealo DE rate lookup,
+the imageUrls semicolon-join, categoryPath mapping (both CSV and mocked
+shopify-api sources), and one end-to-end run against the shared fixture CSV.
+Does NOT re-test build_feed's own loaders/validators/shipping_label_for
+(already covered by test_build_feed.py) beyond confirming idealo_feed calls
+them correctly.
 
 Run with: pytest tests/ -v
 """
@@ -25,30 +26,48 @@ FIXTURE_CSV = Path(__file__).parent / "fixtures" / "sample_products_export.csv"
 
 
 # ---------------------------------------------------------------------------
-# shipping_cost_for_price -- tier boundaries
+# shipping_cost_for_row -- shipping_label -> idealo DE rate lookup
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize("price,expected", [
-    ("0.01", "10.00"),
-    ("700.00", "10.00"),        # top of tier 1 (inclusive)
-    ("700.01", "120.00"),       # just over tier 1 -> tier 2
-    ("1500.00", "120.00"),      # top of tier 2 (inclusive)
-    ("1500.01", "300.00"),      # just over tier 2 -> top tier
-    ("5000.00", "300.00"),
+def test_shipping_cost_for_row_uses_shared_shipping_label():
+    # Coco & Cici -> std_10 (build_feed.VENDOR_SHIPPING_LABELS)
+    row = build_feed.ProductRow(brand="Coco & Cici", price_amount="179.95")
+    assert idealo_feed.shipping_cost_for_row(row) == "10.00"
+
+
+@pytest.mark.parametrize("brand,label,expected", [
+    ("Boomba Bamboo", "std_9", "9.00"),
+    ("MoST Blankets", "std_990", "9.90"),
+    ("Coco & Cici", "std_10", "10.00"),
 ])
-def test_shipping_cost_for_price_tier_boundaries(price, expected):
-    assert idealo_feed.shipping_cost_for_price(price) == expected
+def test_shipping_cost_for_row_matches_live_de_checkout_per_label(brand, label, expected):
+    # Rates confirmed 2026-09-27 against live DE checkout, one order per label.
+    row = build_feed.ProductRow(brand=brand, price_amount="150.00")
+    assert build_feed.shipping_label_for(brand) == label
+    assert idealo_feed.shipping_cost_for_row(row) == expected
 
 
-def test_shipping_cost_for_price_unparseable_falls_back_to_top_tier():
-    assert idealo_feed.shipping_cost_for_price("not-a-number") == idealo_feed.SHIPPING_TOP_TIER
+def test_shipping_cost_for_row_price_is_irrelevant_now():
+    # Unlike the old price tiers, the label alone decides the rate.
+    row_cheap = build_feed.ProductRow(brand="Coco & Cici", price_amount="10.00")
+    row_expensive = build_feed.ProductRow(brand="Coco & Cici", price_amount="5000.00")
+    assert idealo_feed.shipping_cost_for_row(row_cheap) == idealo_feed.shipping_cost_for_row(row_expensive) == "10.00"
 
 
-def test_shipping_cost_for_price_none_falls_back_to_top_tier():
-    assert idealo_feed.shipping_cost_for_price(None) == idealo_feed.SHIPPING_TOP_TIER
+def test_shipping_cost_for_row_unmapped_vendor_fails_loudly():
+    # No entry in build_feed.VENDOR_SHIPPING_LABELS -> DEFAULT_SHIPPING_LABEL
+    # ("std_default"), which has no idealo DE rate -- must raise, never
+    # silently default to any rate.
+    row = build_feed.ProductRow(brand="Some New Vendor", price_amount="50.00")
+    with pytest.raises(ValueError, match="std_default"):
+        idealo_feed.shipping_cost_for_row(row)
 
 
-def test_shipping_cost_for_price_blank_falls_back_to_top_tier():
-    assert idealo_feed.shipping_cost_for_price("") == idealo_feed.SHIPPING_TOP_TIER
+def test_shipping_cost_for_row_label_with_no_idealo_rate_fails_loudly():
+    # VIVARAISE has a GMC shipping_label (std_15) but no idealo DE rate yet
+    # -- a real config gap, must not fall back to any default.
+    row = build_feed.ProductRow(brand="VIVARAISE", price_amount="50.00")
+    with pytest.raises(ValueError, match="std_15"):
+        idealo_feed.shipping_cost_for_row(row)
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +221,7 @@ def test_run_idealo_pipeline_end_to_end_against_fixture(tmp_path):
         assert "Heimtextilien > Bettwäsche" in body  # its German categoryPath (Type "Bedding")
         assert "bamboo-fitted-sheet-sky-blue-2.jpg;bamboo-fitted-sheet-sky-blue-3.jpg" not in body  # sanity: not comma form
         assert ";" in body  # imageUrls semicolon-joined
-        assert "10.00" in body  # deliveryCosts_dpd tier for a 144.00 EUR item
+        assert "9.00" in body  # deliveryCosts_dpd for Boomba Bamboo (std_9)
         assert "4-7 Werktage" in body
         assert "working days" not in body
         assert "0.00" in body  # paymentCosts_paypal / paymentCosts_credit_card
@@ -236,7 +255,7 @@ def test_run_idealo_pipeline_categorypath_blank_when_no_mapping_entry(tmp_path):
     row = build_feed.ProductRow(
         handle="no-mapping", id="SKU-1", title="Title", description="Desc", link="https://x",
         image_link="https://x.jpg", availability="in_stock", price="10.00 EUR", price_amount="10.00",
-        brand="Brand", condition="new", gtin="4006381333931", mpn="SKU-1",
+        brand="Coco & Cici", condition="new", gtin="4006381333931", mpn="SKU-1",
     )
     orig_data_dir, orig_reports_dir = idealo_feed.DATA_DIR, idealo_feed.REPORTS_DIR
     idealo_feed.DATA_DIR = tmp_path / "data"
@@ -258,11 +277,14 @@ def test_run_idealo_pipeline_categorypath_blank_when_no_mapping_entry(tmp_path):
 # variant deep links
 # ---------------------------------------------------------------------------
 def _pipeline_row(handle="h", sku="SKU-1", link=None):
+    # brand defaults to a vendor build_feed.VENDOR_SHIPPING_LABELS actually
+    # maps (std_10) -- an unmapped vendor now fails the build loudly, so
+    # tests that don't care about shipping still need a mapped one.
     return build_feed.ProductRow(
         handle=handle, id=sku, title="Title", description="Desc",
         link=link or f"https://www.maisondecocon.com/products/{handle}?variant_sku={sku}",
         image_link="https://x.jpg", availability="in_stock", price="10.00 EUR", price_amount="10.00",
-        brand="Brand", condition="new", gtin="4006381333931", mpn=sku,
+        brand="Coco & Cici", condition="new", gtin="4006381333931", mpn=sku,
     )
 
 
@@ -362,44 +384,23 @@ def test_pipeline_does_not_mutate_gmc_link(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# SalesFever: country-tiered shipping (overrides price tiers)
+# SalesFever: two labels (sf_bulky / sf_small) via shipping_label_for,
+# idealo.de has one flat rate per label (no per-country rates, unlike GMC).
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize("country,expected", [
-    ("DE", "119.00"), ("AT", "239.00"), ("BE", "239.00"),
-    ("FR", "239.00"), ("LU", "239.00"), ("NL", "239.00"),
-])
-def test_salesfever_shipping_by_country(country, expected):
+def test_salesfever_bulky_rate():
     row = build_feed.ProductRow(brand="SalesFever", price_amount="1716.00")
-    assert idealo_feed.shipping_cost_for_row(row, country) == expected
+    assert idealo_feed.shipping_cost_for_row(row) == "119.00"
 
 
-def test_salesfever_ignores_price_tiers_in_default_feed_country():
-    # 356.00 would be tier 1 (10.00), 1796.00 top tier (300.00) for others.
+def test_salesfever_price_is_irrelevant_to_label():
     for price in ("356.00", "796.00", "1796.00"):
         row = build_feed.ProductRow(brand="SalesFever", price_amount=price)
         assert idealo_feed.shipping_cost_for_row(row) == "119.00"
 
 
-def test_other_vendors_keep_price_tiers():
-    row = build_feed.ProductRow(brand="Coco & Cici", price_amount="179.95")
-    assert idealo_feed.shipping_cost_for_row(row) == "10.00"
-    row = build_feed.ProductRow(brand="Ángel Cerdá S.L.", price_amount="1600.00")
-    assert idealo_feed.shipping_cost_for_row(row) == "300.00"
-
-
-def test_vendor_rate_missing_for_country_fails_loudly():
-    row = build_feed.ProductRow(brand="SalesFever", price_amount="500.00")
-    with pytest.raises(ValueError):
-        idealo_feed.shipping_cost_for_row(row, "IT")
-
-
-@pytest.mark.parametrize("country,expected", [
-    ("DE", "19.90"), ("AT", "79.00"), ("BE", "79.00"),
-    ("FR", "79.00"), ("LU", "79.00"), ("NL", "79.00"),
-])
-def test_salesfever_bed_benches_use_small_rate(country, expected):
+def test_salesfever_bed_benches_use_small_rate():
     row = build_feed.ProductRow(brand="SalesFever", price_amount="199.00")
-    assert idealo_feed.shipping_cost_for_row(row, country, product_type="Bed Benches") == expected
+    assert idealo_feed.shipping_cost_for_row(row, product_type="Bed Benches") == "19.90"
 
 
 def test_salesfever_non_bench_types_stay_on_bulky_rate():
