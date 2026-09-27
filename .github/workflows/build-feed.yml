@@ -5,6 +5,13 @@ on:
     - cron: "0 6 * * *"  # 06:00 UTC daily, after cerda-sync's 05:00 UTC run
   workflow_dispatch: {}  # also runnable manually from the Actions tab
 
+# Shared with build-idealo-feed.yml so the two never commit+push to master at
+# the same time -- without this, a manual dispatch of both (or a slow run
+# overlapping the next day's schedule) can have one workflow's push rejected
+# because the other landed first, even though its own feed build succeeded.
+concurrency:
+  group: merchant-feed-sync-repo-push
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -64,5 +71,17 @@ jobs:
           git config user.name "merchant-feed-sync-bot"
           git config user.email "actions@users.noreply.github.com"
           git add data/ reports/
-          git diff --staged --quiet || git commit -m "Feed build ${{ github.run_id }}"
-          git push
+          git diff --staged --quiet && exit 0
+          git commit -m "Feed build ${{ github.run_id }}"
+          # Belt-and-braces alongside the concurrency group above: retry with
+          # a rebase onto whatever landed on master in between, in case of a
+          # push from outside this workflow pair (e.g. a manual commit).
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt/5) -- rebasing onto latest master and retrying"
+            git pull --rebase
+          done
+          echo "::error::git push failed after 5 rebase+retry attempts"
+          exit 1
