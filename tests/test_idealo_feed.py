@@ -320,9 +320,12 @@ def test_delivery_text_is_german():
     ("Pillows", "Heimtextilien > Kopfkissen"),
     ("Mattresses", "Schlafzimmer > Matratzen"),
     ("Luxury Beds", "Schlafzimmer > Betten"),
+    ("Nightgowns", "Bekleidung > Damenbekleidung > Nachtwäsche > Nachthemden"),
+    ("Pyjamas", "Bekleidung > Damenbekleidung > Nachtwäsche > Schlafanzüge"),
+    ("Sleep Masks", "Drogerie & Gesundheit > Schlafen > Schlafmasken"),
 ])
 def test_live_catalog_types_all_have_german_paths(ptype, expected):
-    # Every Shopify productType in the store as of 2026-09-25 must map.
+    # Every Shopify productType in the store as of 2026-09-27 must map.
     assert idealo_feed.german_category_path(ptype) == expected
 
 

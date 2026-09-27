@@ -233,6 +233,52 @@ def test_csv_option_value_case_insensitive_and_checks_all_three_slots():
     assert build_feed._csv_option_value(raw, "size") == ""
 
 
+def test_csv_option_value_matches_option_name_containing_substring():
+    # A real Shopify option named "Choose your size" (not exactly "Size")
+    # must still be recognized -- e.g. eco-bamboo-pillowcase-hazel.
+    raw = {"Option1 Name": "Choose your size", "Option1 Value": "1 pillowcase 40x80",
+           "Option2 Name": "", "Option2 Value": "", "Option3 Name": "", "Option3 Value": ""}
+    assert build_feed._csv_option_value(raw, "size") == "1 pillowcase 40x80"
+
+
+def test_option_value_containing_matches_substring_case_insensitive():
+    options = {"choose your size": "L", "colour": "Beige"}
+    assert build_feed._option_value_containing(options, "size") == "L"
+    assert build_feed._option_value_containing(options, "COLOR".lower()) == ""  # "colour", not "color"
+    assert build_feed._option_value_containing(options, "colour") == "Beige"
+
+
+def test_option_value_containing_blank_when_no_match():
+    assert build_feed._option_value_containing({"material": "Cotton"}, "size") == ""
+
+
+def test_gender_for_prefers_variant_metafield_over_fallback():
+    assert build_feed.gender_for("Nightgowns", "male") == "male"
+
+
+def test_gender_for_falls_back_by_product_type():
+    assert build_feed.gender_for("Nightgowns", "") == "female"
+    assert build_feed.gender_for("Pyjamas", None) == "female"
+
+
+def test_gender_for_blank_for_unmapped_type():
+    assert build_feed.gender_for("Sleep Masks", "") == ""
+    assert build_feed.gender_for("", "") == ""
+
+
+def test_age_group_for_prefers_variant_metafield_over_fallback():
+    assert build_feed.age_group_for("Pyjamas", "kids") == "kids"
+
+
+def test_age_group_for_falls_back_by_product_type():
+    assert build_feed.age_group_for("Nightgowns", "") == "adult"
+    assert build_feed.age_group_for("Pyjamas", "") == "adult"
+
+
+def test_age_group_for_blank_for_unmapped_type():
+    assert build_feed.age_group_for("Sleep Masks", "") == ""
+
+
 def test_load_products_from_csv_additional_image_link_blank_when_no_extra_images():
     rows = build_feed.load_products_from_csv(str(FIXTURE_CSV))
     single_image_product = next(r for r in rows if r["id"] == "3333339014050")
@@ -345,6 +391,10 @@ def test_load_products_from_shopify_api_mocked(mock_post):
     assert row["color"] == ""
     assert row["size"] == ""
     assert row["material"] == ""
+    # no productType on the mocked node and "Mock Vendor" isn't in either
+    # fallback table -- blank, never guessed.
+    assert row["gender"] == ""
+    assert row["age_group"] == ""
 
 
 @patch("build_feed.requests.post")
@@ -375,6 +425,115 @@ def test_load_products_from_shopify_api_maps_color_size_material_from_real_shopi
     assert rows[0]["color"] == "Coco white"
     assert rows[0]["size"] == "140x200 cm"
     assert rows[0]["material"] == "100% Bamboo (Tanboocel™)"
+
+
+@patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_reads_variant_gender_age_group_metafields(mock_post):
+    build_feed._cached_token = None
+
+    token_response = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-token"}
+    token_response.raise_for_status.return_value = None
+
+    node = dict(MOCK_GRAPHQL_RESPONSE["data"]["products"]["edges"][0]["node"])
+    node["productType"] = "Nightgowns"
+    node["variants"] = {
+        "edges": [
+            {"node": {"sku": "MOCK-1", "price": "50.00", "barcode": "4006381333931", "inventoryQuantity": 5,
+                      "genderMetafield": {"value": "female"}, "ageGroupMetafield": {"value": "adult"}}}
+        ]
+    }
+    response = {"data": {"products": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "edges": [{"node": node}]}}}
+    graphql_response = MagicMock()
+    graphql_response.json.return_value = response
+    graphql_response.raise_for_status.return_value = None
+    mock_post.side_effect = [token_response, graphql_response]
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
+
+    assert rows[0]["gender"] == "female"
+    assert rows[0]["age_group"] == "adult"
+
+
+@patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_falls_back_to_product_type_when_variant_metafields_missing(mock_post):
+    build_feed._cached_token = None
+
+    token_response = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-token"}
+    token_response.raise_for_status.return_value = None
+
+    node = dict(MOCK_GRAPHQL_RESPONSE["data"]["products"]["edges"][0]["node"])
+    node["productType"] = "Pyjamas"
+    node["variants"] = {
+        "edges": [
+            # no genderMetafield/ageGroupMetafield at all on this variant
+            {"node": {"sku": "MOCK-1", "price": "50.00", "barcode": "4006381333931", "inventoryQuantity": 5}}
+        ]
+    }
+    response = {"data": {"products": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "edges": [{"node": node}]}}}
+    graphql_response = MagicMock()
+    graphql_response.json.return_value = response
+    graphql_response.raise_for_status.return_value = None
+    mock_post.side_effect = [token_response, graphql_response]
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
+
+    assert rows[0]["gender"] == "female"  # PRODUCT_TYPE_GENDER_FALLBACK["Pyjamas"]
+    assert rows[0]["age_group"] == "adult"  # PRODUCT_TYPE_AGE_GROUP_FALLBACK["Pyjamas"]
+
+
+@patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_gender_age_group_blank_for_unmapped_type(mock_post):
+    build_feed._cached_token = None
+
+    token_response = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-token"}
+    token_response.raise_for_status.return_value = None
+
+    node = dict(MOCK_GRAPHQL_RESPONSE["data"]["products"]["edges"][0]["node"])
+    node["productType"] = "Sleep Masks"
+    node["variants"] = {
+        "edges": [
+            {"node": {"sku": "MOCK-1", "price": "50.00", "barcode": "4006381333931", "inventoryQuantity": 5}}
+        ]
+    }
+    response = {"data": {"products": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "edges": [{"node": node}]}}}
+    graphql_response = MagicMock()
+    graphql_response.json.return_value = response
+    graphql_response.raise_for_status.return_value = None
+    mock_post.side_effect = [token_response, graphql_response]
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
+
+    assert rows[0]["gender"] == ""
+    assert rows[0]["age_group"] == ""
+
+
+@patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_reads_size_from_option_named_choose_your_size(mock_post):
+    build_feed._cached_token = None
+
+    token_response = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-token"}
+    token_response.raise_for_status.return_value = None
+
+    node = dict(MOCK_GRAPHQL_RESPONSE["data"]["products"]["edges"][0]["node"])
+    node["variants"] = {
+        "edges": [
+            {"node": {"sku": "MOCK-1", "price": "50.00", "barcode": "4006381333931", "inventoryQuantity": 5,
+                      "selectedOptions": [{"name": "Choose your size", "value": "1 pillowcase 40x80"}]}}
+        ]
+    }
+    response = {"data": {"products": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "edges": [{"node": node}]}}}
+    graphql_response = MagicMock()
+    graphql_response.json.return_value = response
+    graphql_response.raise_for_status.return_value = None
+    mock_post.side_effect = [token_response, graphql_response]
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
+
+    assert rows[0]["size"] == "1 pillowcase 40x80"
 
 
 @patch("build_feed.requests.post")
@@ -801,6 +960,11 @@ def test_feed_has_shipping_label_but_no_per_row_shipping_column():
     assert "shipping_label" in build_feed.FEED_COLUMNS
     assert "shipping" not in build_feed.FEED_COLUMNS
     assert not hasattr(build_feed, "build_shipping")
+
+
+def test_feed_columns_include_gender_and_age_group():
+    assert "gender" in build_feed.FEED_COLUMNS
+    assert "age_group" in build_feed.FEED_COLUMNS
 
 
 def test_netherlands_is_served_by_the_be_nl_and_en_feeds():

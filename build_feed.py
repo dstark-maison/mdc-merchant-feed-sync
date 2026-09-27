@@ -160,6 +160,40 @@ def shipping_label_for(vendor, product_type=""):
     return VENDOR_SHIPPING_LABELS.get(vendor, DEFAULT_SHIPPING_LABEL)
 
 
+# Google requires gender + age_group on Apparel & Accessories offers
+# (support.google.com/merchants/answer/6324479,
+# support.google.com/merchants/answer/6324463). The real source of truth is
+# each variant's own mm-google-shopping.gender/age_group metafield (set
+# directly on the product's variants in Shopify) -- this table is only a
+# fallback for a variant that has neither set, keyed by product_type the
+# same way SALESFEVER_SMALL_TYPES/CATEGORY_PATHS_DE (idealo_feed.py) are.
+# Every current Nightgowns/Pyjamas offer is women's sleepwear ("Ladies" in
+# the title), so the fallback is safe today, but a future unisex or
+# children's item in either type should get its own variant metafields
+# rather than silently inheriting this default -- add a real metafield
+# rather than widening this table.
+PRODUCT_TYPE_GENDER_FALLBACK = {"Nightgowns": "female", "Pyjamas": "female"}
+PRODUCT_TYPE_AGE_GROUP_FALLBACK = {"Nightgowns": "adult", "Pyjamas": "adult"}
+
+
+def gender_for(product_type, variant_gender=""):
+    """gender for one offer: the variant's own metafield value if set,
+    else the product_type fallback, else "" (e.g. Sleep Masks, or any
+    non-apparel type -- never guessed for a type not in the table)."""
+    variant_gender = (variant_gender or "").strip()
+    if variant_gender:
+        return variant_gender
+    return PRODUCT_TYPE_GENDER_FALLBACK.get((product_type or "").strip(), "")
+
+
+def age_group_for(product_type, variant_age_group=""):
+    """age_group for one offer: same precedence as gender_for."""
+    variant_age_group = (variant_age_group or "").strip()
+    if variant_age_group:
+        return variant_age_group
+    return PRODUCT_TYPE_AGE_GROUP_FALLBACK.get((product_type or "").strip(), "")
+
+
 # EU 2019/771 gives every EU consumer a minimum 2-year statutory conformity
 # guarantee regardless of what a merchant's own return policy says. This is
 # informational metadata on rows only. Return-policy coverage is still handled
@@ -205,8 +239,8 @@ class ProductRow(dict):
     behavior, just a documented shape so callers don't have to guess keys:
     id, title, description, link, image_link, additional_image_link, price,
     availability, brand, condition, gtin, mpn, item_group_id, color, size,
-    material, handle (handle is feed-internal, stripped before writing --
-    kept only for grouping/debugging). additional_image_link is optional --
+    material, gender, age_group, handle (handle is feed-internal, stripped
+    before writing -- kept only for grouping/debugging). additional_image_link is optional --
     Google's own format for it in a tab/comma-delimited feed is a single
     column holding up to 10 comma-separated URLs
     (support.google.com/merchants/answer/6324370), not a repeated column, so
@@ -223,7 +257,14 @@ class ProductRow(dict):
     and defaulting one in (e.g. "solid") would be fabricated data on a feed
     for an account with a prior Misrepresentation suspension -- see the
     module docstring's sample-data guard for why that risk is taken
-    seriously here."""
+    seriously here.
+
+    gender/age_group: a real variant-level mm-google-shopping.gender /
+    age_group metafield takes priority when set; PRODUCT_TYPE_GENDER_
+    FALLBACK / PRODUCT_TYPE_AGE_GROUP_FALLBACK (see gender_for/age_group_for)
+    only fires when a variant has neither, and only for product types in
+    that table (e.g. Nightgowns, Pyjamas) -- "" for every other type, same
+    never-invented policy as color/size/material."""
 
 
 def strip_html(raw):
@@ -367,14 +408,31 @@ def _csv_option_value(raw, option_name):
     """Looks up a named Shopify product option's value for one CSV row.
     Shopify's product export carries up to 3 option columns per variant row
     as Option<N> Name / Option<N> Value pairs -- this checks all 3 slots,
-    case-insensitively on the name, and returns "" if that product simply
-    doesn't have an option by this name (never falls back to parsing the
-    title/handle)."""
+    case-insensitively, matching an option whose name CONTAINS option_name
+    rather than requiring an exact match (e.g. a real option named "Choose
+    your size" matches option_name="size", same as one literally named
+    "Size"), and returns "" if that product simply doesn't have a matching
+    option (never falls back to parsing the title/handle)."""
     target = option_name.strip().lower()
     for i in (1, 2, 3):
         name = (raw.get(f"Option{i} Name") or "").strip().lower()
-        if name == target:
+        if target in name:
             return (raw.get(f"Option{i} Value") or "").strip()
+    return ""
+
+
+def _option_value_containing(names_to_values, substring):
+    """Looks up a Shopify variant option's value from a {lowercased name:
+    value} dict, matching the first name that CONTAINS substring rather than
+    requiring an exact match -- e.g. matches a real option literally named
+    "Size" as well as one named "Choose your size". Returns "" if none
+    match. Mirrors _csv_option_value's substring-matching behavior for the
+    shopify-api adapter, which gets its options as a dict rather than
+    Option<N> Name/Value CSV columns."""
+    substring = substring.strip().lower()
+    for name, value in names_to_values.items():
+        if substring in name:
+            return value
     return ""
 
 
@@ -446,6 +504,11 @@ def load_products_from_csv(path):
             # The shopify-api adapter is the source of truth for material.
             material="",
             shipping_label=shipping_label_for(base["vendor"], base["product_type"]),
+            # CSV export carries no metafields, so this is always the
+            # product_type fallback for CSV-sourced rows -- the shopify-api
+            # adapter is the source of truth for a real per-variant value.
+            gender=gender_for(base["product_type"]),
+            age_group=age_group_for(base["product_type"]),
         ))
     return rows
 
@@ -500,6 +563,8 @@ query($cursor: String, $locale: String!) {
               barcode
               inventoryQuantity
               selectedOptions { name value }
+              genderMetafield: metafield(namespace: "mm-google-shopping", key: "gender") { value }
+              ageGroupMetafield: metafield(namespace: "mm-google-shopping", key: "age_group") { value }
             }
           }
         }
@@ -610,8 +675,10 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                     (opt.get("name") or "").strip().lower(): (opt.get("value") or "").strip()
                     for opt in (v.get("selectedOptions") or [])
                 }
-                color = selected_options.get("color", "")
-                size = selected_options.get("size", "")
+                color = _option_value_containing(selected_options, "color")
+                size = _option_value_containing(selected_options, "size")
+                gender = gender_for(product_type, (v.get("genderMetafield") or {}).get("value"))
+                age_group = age_group_for(product_type, (v.get("ageGroupMetafield") or {}).get("value"))
                 rows.append(ProductRow(
                     handle=handle,
                     id=sku,
@@ -633,6 +700,8 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                     material=material,
                     shipping_label=shipping_label_for(vendor, product_type),
                     translation_missing=translation_missing,
+                    gender=gender,
+                    age_group=age_group,
                 ))
         if not block["pageInfo"]["hasNextPage"]:
             break
@@ -646,7 +715,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
 FEED_COLUMNS = [
     "id", "title", "description", "link", "image_link", "additional_image_link",
     "availability", "price", "brand", "condition", "gtin", "mpn", "item_group_id",
-    "color", "size", "material", "shipping_label",
+    "color", "size", "material", "shipping_label", "gender", "age_group",
 ]
 
 
