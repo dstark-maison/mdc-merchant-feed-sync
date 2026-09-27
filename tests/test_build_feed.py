@@ -241,6 +241,15 @@ def test_csv_option_value_matches_option_name_containing_substring():
     assert build_feed._csv_option_value(raw, "size") == "1 pillowcase 40x80"
 
 
+def test_csv_option_value_colo_matches_both_color_and_colour_spelling():
+    raw_us = {"Option1 Name": "Color", "Option1 Value": "Beige",
+              "Option2 Name": "", "Option2 Value": "", "Option3 Name": "", "Option3 Value": ""}
+    raw_uk = {"Option1 Name": "Colour", "Option1 Value": "Sky Blue",
+              "Option2 Name": "", "Option2 Value": "", "Option3 Name": "", "Option3 Value": ""}
+    assert build_feed._csv_option_value(raw_us, "colo") == "Beige"
+    assert build_feed._csv_option_value(raw_uk, "colo") == "Sky Blue"
+
+
 def test_option_value_containing_matches_substring_case_insensitive():
     options = {"choose your size": "L", "colour": "Beige"}
     assert build_feed._option_value_containing(options, "size") == "L"
@@ -277,6 +286,48 @@ def test_age_group_for_falls_back_by_product_type():
 
 def test_age_group_for_blank_for_unmapped_type():
     assert build_feed.age_group_for("Sleep Masks", "") == ""
+
+
+# ---------------------------------------------------------------------------
+# strip_size_quantity_prefix / _color_pattern_label
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("raw,expected", [
+    ("1 pillowcase 40x80", "40x80"),
+    ("2 pillowcases 60x70", "60x70"),
+    ("1 fitted sheet 140x200 cm", "140x200 cm"),
+    ("1 pillowcase 50x70 without valance", "50x70 without valance"),
+    ("M / L", "M / L"),  # no digit at all -- untouched
+    ("XL", "XL"),
+    ("200x200 + 2 pillowcases 60x70", "200x200 + 2 pillowcases 60x70"),  # already starts with a dimension
+    ("", ""),
+    (None, ""),
+])
+def test_strip_size_quantity_prefix(raw, expected):
+    assert build_feed.strip_size_quantity_prefix(raw) == expected
+
+
+@pytest.mark.parametrize("raw", [
+    "200 x 200 cm",   # bare "x" separator IS the dimension, not a quantity+noun prefix
+    "260 × 220",       # multiplication sign variant
+])
+def test_strip_size_quantity_prefix_leaves_bare_dimension_separator_alone(raw):
+    assert build_feed.strip_size_quantity_prefix(raw) == raw
+
+
+def test_color_pattern_label_resolves_single_reference():
+    metafield = {"references": {"nodes": [{"field": {"value": "Hazel"}}]}}
+    assert build_feed._color_pattern_label(metafield) == "Hazel"
+
+
+def test_color_pattern_label_joins_multiple_references():
+    metafield = {"references": {"nodes": [{"field": {"value": "Off White"}}, {"field": {"value": "Beige"}}]}}
+    assert build_feed._color_pattern_label(metafield) == "Off White/Beige"
+
+
+def test_color_pattern_label_blank_when_metafield_absent():
+    assert build_feed._color_pattern_label(None) == ""
+    assert build_feed._color_pattern_label({}) == ""
+    assert build_feed._color_pattern_label({"references": {"nodes": []}}) == ""
 
 
 def test_load_products_from_csv_additional_image_link_blank_when_no_extra_images():
@@ -533,7 +584,92 @@ def test_load_products_from_shopify_api_reads_size_from_option_named_choose_your
 
     rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
 
-    assert rows[0]["size"] == "1 pillowcase 40x80"
+    assert rows[0]["size"] == "40x80"  # quantity/noun prefix stripped
+
+
+@patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_color_from_color_pattern_metafield(mock_post):
+    build_feed._cached_token = None
+
+    token_response = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-token"}
+    token_response.raise_for_status.return_value = None
+
+    node = dict(MOCK_GRAPHQL_RESPONSE["data"]["products"]["edges"][0]["node"])
+    node["colorPatternMetafield"] = {"references": {"nodes": [{"field": {"value": "Hazel"}}]}}
+    node["variants"] = {
+        "edges": [
+            # No Color/Colour option on the variant at all -- the product-level
+            # category metafield is the only source here.
+            {"node": {"sku": "MOCK-1", "price": "50.00", "barcode": "4006381333931", "inventoryQuantity": 5,
+                      "selectedOptions": [{"name": "Choose your size", "value": "1 pillowcase 40x80"}]}}
+        ]
+    }
+    response = {"data": {"products": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "edges": [{"node": node}]}}}
+    graphql_response = MagicMock()
+    graphql_response.json.return_value = response
+    graphql_response.raise_for_status.return_value = None
+    mock_post.side_effect = [token_response, graphql_response]
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
+
+    assert rows[0]["color"] == "Hazel"
+    assert rows[0]["size"] == "40x80"
+
+
+@patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_color_pattern_metafield_takes_priority_over_option(mock_post):
+    build_feed._cached_token = None
+
+    token_response = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-token"}
+    token_response.raise_for_status.return_value = None
+
+    node = dict(MOCK_GRAPHQL_RESPONSE["data"]["products"]["edges"][0]["node"])
+    node["colorPatternMetafield"] = {"references": {"nodes": [{"field": {"value": "Off White"}}]}}
+    node["variants"] = {
+        "edges": [
+            # A stale/conflicting Color option should lose to the category metafield.
+            {"node": {"sku": "MOCK-1", "price": "50.00", "barcode": "4006381333931", "inventoryQuantity": 5,
+                      "selectedOptions": [{"name": "Color", "value": "Ivory"}]}}
+        ]
+    }
+    response = {"data": {"products": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "edges": [{"node": node}]}}}
+    graphql_response = MagicMock()
+    graphql_response.json.return_value = response
+    graphql_response.raise_for_status.return_value = None
+    mock_post.side_effect = [token_response, graphql_response]
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
+
+    assert rows[0]["color"] == "Off White"
+
+
+@patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_falls_back_to_colour_option_when_no_color_pattern_metafield(mock_post):
+    build_feed._cached_token = None
+
+    token_response = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-token"}
+    token_response.raise_for_status.return_value = None
+
+    node = dict(MOCK_GRAPHQL_RESPONSE["data"]["products"]["edges"][0]["node"])
+    # No colorPatternMetafield on this node at all.
+    node["variants"] = {
+        "edges": [
+            {"node": {"sku": "MOCK-1", "price": "50.00", "barcode": "4006381333931", "inventoryQuantity": 5,
+                      "selectedOptions": [{"name": "Colour", "value": "Sky Blue"}]}}  # British spelling
+        ]
+    }
+    response = {"data": {"products": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "edges": [{"node": node}]}}}
+    graphql_response = MagicMock()
+    graphql_response.json.return_value = response
+    graphql_response.raise_for_status.return_value = None
+    mock_post.side_effect = [token_response, graphql_response]
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
+
+    assert rows[0]["color"] == "Sky Blue"
 
 
 @patch("build_feed.requests.post")

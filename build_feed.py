@@ -248,8 +248,14 @@ class ProductRow(dict):
     column here.
 
     color/size/material are populated ONLY from data that genuinely exists
-    on the product in Shopify -- a real "Color"/"Size" variant option, or the
-    maison_seo.fabric metafield for material. A product with no Color option
+    on the product in Shopify. color: the product-level shopify.color-pattern
+    category metafield (resolved to its metaobject's display label, e.g.
+    "Hazel") if set, else a real "Color"/"Colour" variant option -- CSV rows
+    only ever get the option (no metafields in a Shopify export). size: a
+    real "Size" variant option (matching any option name containing "size",
+    e.g. "Choose your size"), with a leading quantity/noun prefix stripped
+    (see strip_size_quantity_prefix). material: the maison_seo.fabric
+    metafield. A product with no Color option and no color-pattern metafield
     (some Casilin and Boomba Bedding Set products) gets color="" rather than
     a value parsed out of its title -- never invented, never defaulted. There
     is deliberately no `pattern` field: no source of pattern data exists
@@ -421,6 +427,57 @@ def _csv_option_value(raw, option_name):
     return ""
 
 
+def _color_pattern_label(color_pattern_metafield):
+    """Resolves the shopify.color-pattern category metafield (a
+    list.metaobject_reference to Shopify's standard "Color" metaobject
+    definition) to its human-readable display name(s), e.g. "Hazel",
+    "Off White" -- via the metafield's own `references` connection, which
+    Shopify resolves inline (no second round-trip query needed). Multiple
+    references (rare -- a genuinely multi-color product) are joined with
+    "/". Returns "" if the metafield is absent or empty, so the caller can
+    fall back to a real "Color"/"Colour" variant option."""
+    if not color_pattern_metafield:
+        return ""
+    labels = []
+    for node in (color_pattern_metafield.get("references") or {}).get("nodes") or []:
+        value = (node.get("field") or {}).get("value")
+        if value:
+            labels.append(value)
+    return "/".join(labels)
+
+
+# A leading "<quantity> <noun(s)> " phrase on an otherwise-dimensional size
+# value, e.g. "1 pillowcase 40x80" or "2 pillowcases 60x70" -- Google wants
+# just the dimension ("40x80"), not the quantity/noun Shopify's option value
+# happens to be phrased with. Matches the shortest leading run of digits +
+# whitespace + non-digit text that is immediately followed by a digit (the
+# real dimension token starting); strip_size_quantity_prefix then rejects a
+# match whose non-digit run is nothing but a bare "x"/"×" dimension
+# separator (e.g. "200 x 200 cm" is a real dimension, not a quantity+noun
+# prefix, and must be left alone). Never touches a value that already
+# starts with a dimension with no space before it (e.g. "200x200 + 2
+# pillowcases 60x70") or one with no digit in it at all (e.g. "M / L",
+# "XL", "S") -- generic across the whole catalog, not specific to any one
+# product's option wording.
+SIZE_QUANTITY_PREFIX_RE = re.compile(r"^(\d+)\s+([^\d]+?)\s*(?=\d)")
+
+
+def strip_size_quantity_prefix(value):
+    """Strips a leading quantity+noun prefix from a Size option value when
+    one is present, e.g. "1 pillowcase 40x80" -> "40x80". Returns the value
+    unchanged if it doesn't match, or if the only thing between the leading
+    quantity and the dimension is a bare "x"/"×" separator -- i.e. the
+    value is itself a dimension like "200 x 200 cm", not a quantity+noun
+    prefix on one."""
+    value = value or ""
+    match = SIZE_QUANTITY_PREFIX_RE.match(value)
+    if not match:
+        return value
+    if re.fullmatch(r"[x×]", match.group(2), re.IGNORECASE):
+        return value
+    return value[match.end():]
+
+
 def _option_value_containing(names_to_values, substring):
     """Looks up a Shopify variant option's value from a {lowercased name:
     value} dict, matching the first name that CONTAINS substring rather than
@@ -471,8 +528,12 @@ def load_products_from_csv(path):
         barcode = (raw.get("Variant Barcode") or "").strip()
         image = (raw.get("Image Src") or "").strip()
         additional_images = [u for u in images_by_handle.get(handle, []) if u != image][:MAX_ADDITIONAL_IMAGES]
-        color = _csv_option_value(raw, "color")
-        size = _csv_option_value(raw, "size")
+        # CSV export carries no metafields, so color-pattern's product-level
+        # metaobject reference isn't available here -- only the option
+        # fallback ("colo" matches both "Color" and "Colour"). The
+        # shopify-api adapter is the source of truth for the real value.
+        color = _csv_option_value(raw, "colo")
+        size = strip_size_quantity_prefix(_csv_option_value(raw, "size"))
         qty_raw = (raw.get("Variant Inventory Qty") or "").strip()
         try:
             qty = int(float(qty_raw)) if qty_raw else 0
@@ -555,6 +616,9 @@ query($cursor: String, $locale: String!) {
         images(first: 11) { nodes { url } }
         translations(locale: $locale) { key value }
         fabricMetafield: metafield(namespace: "maison_seo", key: "fabric") { value }
+        colorPatternMetafield: metafield(namespace: "shopify", key: "color-pattern") {
+          references(first: 5) { nodes { ... on Metaobject { field(key: "label") { value } } } }
+        }
         variants(first: 100) {
           edges {
             node {
@@ -659,6 +723,13 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
             additional_images = additional_images[:MAX_ADDITIONAL_IMAGES]
             material = (node.get("fabricMetafield") or {}).get("value") or ""
             product_type = (node.get("productType") or "").strip()
+            # Product-level (not per-variant): Shopify's standard "Color"
+            # category metafield, resolved to its display label (e.g.
+            # "Hazel"). Takes priority over a variant option below when
+            # present -- Google requires `color` for Apparel offers in
+            # DE/FR, and this category metafield is the source of truth
+            # set on the product (Phase 1), not a per-variant choice.
+            color_pattern_label = _color_pattern_label(node.get("colorPatternMetafield"))
             for vedge in node["variants"]["edges"]:
                 v = vedge["node"]
                 sku = (v.get("sku") or "").strip()
@@ -667,16 +738,20 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                 barcode = (v.get("barcode") or "").strip()
                 qty = v.get("inventoryQuantity") or 0
                 price_amount = str(v.get("price") or "")
-                # Only ever read from a real Shopify variant option by this
-                # exact name -- "" (not a title-parsed guess) when the
-                # product has no such option, e.g. several Casilin and
-                # Boomba Bedding Set products have Size only, no Color.
+                # color: the product-level color-pattern metaobject label
+                # if set, else a real "Color"/"Colour" variant option ("" --
+                # not a title-parsed guess -- when neither exists, e.g.
+                # several Casilin and Boomba Bedding Set products have Size
+                # only, no Color).
+                # size: a real "Size" variant option (matches "Choose your
+                # size" etc. too), with any leading quantity/noun phrase
+                # stripped (e.g. "1 pillowcase 40x80" -> "40x80").
                 selected_options = {
                     (opt.get("name") or "").strip().lower(): (opt.get("value") or "").strip()
                     for opt in (v.get("selectedOptions") or [])
                 }
-                color = _option_value_containing(selected_options, "color")
-                size = _option_value_containing(selected_options, "size")
+                color = color_pattern_label or _option_value_containing(selected_options, "colo")
+                size = strip_size_quantity_prefix(_option_value_containing(selected_options, "size"))
                 gender = gender_for(product_type, (v.get("genderMetafield") or {}).get("value"))
                 age_group = age_group_for(product_type, (v.get("ageGroupMetafield") or {}).get("value"))
                 rows.append(ProductRow(
