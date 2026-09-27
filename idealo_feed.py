@@ -137,6 +137,10 @@ CATEGORY_PATHS_DE = {
     "Upholstered Beds": "Schlafzimmer > Betten > Polsterbetten",
     "Headboards": "Schlafzimmer > Betten > Kopfteile",
     "Bed Benches": "Schlafzimmer > Bettbänke",
+    # Nachtwäsche & Schlafzubehör
+    "Nightgowns": "Bekleidung > Damenbekleidung > Nachtwäsche > Nachthemden",
+    "Pyjamas": "Bekleidung > Damenbekleidung > Nachtwäsche > Schlafanzüge",
+    "Sleep Masks": "Drogerie & Gesundheit > Schlafen > Schlafmasken",
 }
 
 # deliveryCosts_dpd per offer, keyed by Merchant Center shipping_label.
