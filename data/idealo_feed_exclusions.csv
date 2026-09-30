@@ -1,4 +1,5 @@
 id,title,reason,category
+12602207,TENCEL™-Satin-Bettbezug in Terra Pink,availability out_of_stock,out_of_stock
 4260240AS,Tencel™ Vier-Jahreszeiten-Bettdecke,availability out_of_stock,out_of_stock
 M11402201,Bettbezug aus Tencel™-Twill – Pfirsich,availability out_of_stock,out_of_stock
 M12002201,Bettbezug aus Tencel™-Twill – Pfirsich,availability out_of_stock,out_of_stock
@@ -11,7 +12,6 @@ M12402201,Bettbezug aus Tencel™-Twill – Pfirsich,availability out_of_stock,o
 B12402206VS,Eco Bamboo Bettbezug in der Farbe „Powder Peach“,availability out_of_stock,out_of_stock
 TLB2022VS,Bettbezug aus Tencel™-Twill in Lavendelblau,availability out_of_stock,out_of_stock
 TLB2020VS,Bettbezug aus Tencel™-Twill in Lavendelblau,availability out_of_stock,out_of_stock
-TLB2422VS,Bettbezug aus Tencel™-Twill in Lavendelblau,availability out_of_stock,out_of_stock
 B11402204,"Bettbezug aus Bambus, Ozeanblau",availability out_of_stock,out_of_stock
 B11402004VS,"Bettbezug aus Bambus, Ozeanblau",availability out_of_stock,out_of_stock
 TDR2422VS,Bettbezug aus Tencel™-Twill in der Farbe „Dusty Rose“,availability out_of_stock,out_of_stock
@@ -19,11 +19,7 @@ TDR1420VS,Bettbezug aus Tencel™-Twill in der Farbe „Dusty Rose“,availabili
 TDR1422VS,Bettbezug aus Tencel™-Twill in der Farbe „Dusty Rose“,availability out_of_stock,out_of_stock
 TDR2022VS,Bettbezug aus Tencel™-Twill in der Farbe „Dusty Rose“,availability out_of_stock,out_of_stock
 SWS1420VS,"Bettbezug aus Tencel™-Satin, Farbe „White Sand“",availability out_of_stock,out_of_stock
-SWS2020VS,"Bettbezug aus Tencel™-Satin, Farbe „White Sand“",availability out_of_stock,out_of_stock
 SWS1422VS,"Bettbezug aus Tencel™-Satin, Farbe „White Sand“",availability out_of_stock,out_of_stock
-SWS2422VS,"Bettbezug aus Tencel™-Satin, Farbe „White Sand“",availability out_of_stock,out_of_stock
-SWS2622VS,"Bettbezug aus Tencel™-Satin, Farbe „White Sand“",availability out_of_stock,out_of_stock
-SWS2022VS,"Bettbezug aus Tencel™-Satin, Farbe „White Sand“",availability out_of_stock,out_of_stock
 M12602208VS,"Bettbezug aus Tencel™-Twill, olivgrün",availability out_of_stock,out_of_stock
 M11402008VS,"Bettbezug aus Tencel™-Twill, olivgrün",availability out_of_stock,out_of_stock
 M12002008VS,"Bettbezug aus Tencel™-Twill, olivgrün",availability out_of_stock,out_of_stock
@@ -31,10 +27,8 @@ M11402208VS,"Bettbezug aus Tencel™-Twill, olivgrün",availability out_of_stock
 M12402208VS,"Bettbezug aus Tencel™-Twill, olivgrün",availability out_of_stock,out_of_stock
 M12002208VS,"Bettbezug aus Tencel™-Twill, olivgrün",availability out_of_stock,out_of_stock
 TOY2422VS,Bettbezug aus Tencel™-Twill in Ockergelb,availability out_of_stock,out_of_stock
-2507024,"Kissenbezug aus Tencel™-Satin, Taupe",availability out_of_stock,out_of_stock
 250607,Kissenbezug aus Tencel™-Satin in Terra Pink,availability out_of_stock,out_of_stock
 260707,Kissenbezug aus Tencel™-Satin in Terra Pink,availability out_of_stock,out_of_stock
-M250601,"Kissenbezug aus Tencel™-Twill, Farbe: Pfirsich",availability out_of_stock,out_of_stock
 260703,"Kissenbezug aus Tencel™-Satin, grau-blau",availability out_of_stock,out_of_stock
 B250603,"Kissenbezug aus Bambus, ockergelb",availability out_of_stock,out_of_stock
 B240803,"Kissenbezug aus Bambus, ockergelb",availability out_of_stock,out_of_stock
@@ -43,8 +37,6 @@ B250753,"Kissenbezug aus Bambus, ockergelb",availability out_of_stock,out_of_sto
 B260703,"Kissenbezug aus Bambus, ockergelb",availability out_of_stock,out_of_stock
 M2507028,"Kissenbezug aus Tencel™-Twill, olivgrün",availability out_of_stock,out_of_stock
 M2507027,"Kissenbezug aus Tencel™-Twill, weiß",availability out_of_stock,out_of_stock
-2507021,"Kissenbezug aus Tencel™-Satin, weiß",availability out_of_stock,out_of_stock
-250601,"Kissenbezug aus Tencel™-Satin, weiß",availability out_of_stock,out_of_stock
 TDB57NB,"Kissenbezug aus Tencel™-Twill, dunkelblau",availability out_of_stock,out_of_stock
 8720849140577,"Woll-Decke „Chocolate Chip“, 140 x 200",availability out_of_stock,out_of_stock
 8720849141444,"Woll-Decke „Rio“ in Beige, 140 x 200",availability out_of_stock,out_of_stock
