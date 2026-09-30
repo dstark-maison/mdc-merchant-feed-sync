@@ -62,12 +62,20 @@ def test_shipping_cost_for_row_unmapped_vendor_fails_loudly():
         idealo_feed.shipping_cost_for_row(row)
 
 
-def test_shipping_cost_for_row_label_with_no_idealo_rate_fails_loudly():
-    # VIVARAISE has a GMC shipping_label (std_15) but no idealo DE rate yet
-    # -- a real config gap, must not fall back to any default.
-    row = build_feed.ProductRow(brand="VIVARAISE", price_amount="50.00")
-    with pytest.raises(ValueError, match="std_15"):
-        idealo_feed.shipping_cost_for_row(row)
+def test_shipping_cost_for_row_vivaraise_uses_std_15_rate():
+    # VIVARAISE -> std_15 (build_feed.VENDOR_SHIPPING_LABELS) -> EUR 15.00
+    # flat on idealo DE, regardless of price.
+    for price in ("19.90", "50.00", "399.90"):
+        row = build_feed.ProductRow(brand="VIVARAISE", price_amount=price)
+        assert idealo_feed.shipping_cost_for_row(row) == "15.00"
+
+
+def test_every_vendor_shipping_label_has_an_idealo_rate():
+    # A label onboarded to GMC but missing here would fail the idealo build
+    # as soon as that vendor's products go active (this is how std_15 was
+    # caught before the VIVARAISE launch).
+    for vendor, label in build_feed.VENDOR_SHIPPING_LABELS.items():
+        assert label in idealo_feed.IDEALO_SHIPPING_RATES_DE, (vendor, label)
 
 
 # ---------------------------------------------------------------------------
@@ -316,6 +324,7 @@ def test_delivery_text_is_german():
     ("Throws", "Heimtextilien > Wohndecken"),
     ("Duvets", "Heimtextilien > Bettdecken"),
     ("Bedspreads", "Heimtextilien > Tagesdecken"),
+    ("Decorative Cushions", "Heimtextilien > Dekokissen"),
     ("Bed Runners", "Heimtextilien > Bettläufer"),
     ("Pillows", "Heimtextilien > Kopfkissen"),
     ("Mattresses", "Schlafzimmer > Matratzen"),
@@ -346,6 +355,17 @@ def test_pipeline_writes_german_category_and_reports_unmapped(tmp_path):
     assert stats["unmapped_types"] == {"Gadgets": 1}
     assert "`Gadgets`: 1 offer(s)" in report
     assert "`none`" in report
+
+
+def test_vivaraise_cushion_end_to_end(tmp_path):
+    row = _pipeline_row("cushion", "SKU-V")
+    row["brand"] = "VIVARAISE"
+    stats, written, report = _run(tmp_path, [row], {"cushion": "Decorative Cushions"}, name="unit_test_idealo_vivaraise")
+    assert len(written) == 1
+    assert written[0]["categoryPath"] == "Heimtextilien > Dekokissen"
+    assert written[0]["delivery"] == "6-11 Werktage"
+    assert written[0]["deliveryCosts_dpd"] == "15.00"
+    assert stats["unmapped_types"] == {}
 
 
 def test_variant_url_replaces_variant_sku_with_native_variant_id():
@@ -448,6 +468,12 @@ def test_pipeline_writes_salesfever_shipping_once_published(tmp_path):
 def test_salesfever_delivery_text():
     row = build_feed.ProductRow(brand="SalesFever")
     assert idealo_feed.delivery_text_for_row(row) == "9-16 Werktage"
+
+
+def test_vivaraise_delivery_text():
+    # 3-6 working days handling + 3-5 transit = 6-11 working days
+    row = build_feed.ProductRow(brand="VIVARAISE")
+    assert idealo_feed.delivery_text_for_row(row) == "6-11 Werktage"
 
 
 @pytest.mark.parametrize("brand", ["Coco & Cici", "Ángel Cerdá S.L.", "salesfever", "SalesFever GmbH", "", None])
