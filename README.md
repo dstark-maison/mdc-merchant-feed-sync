@@ -205,7 +205,7 @@ https://raw.githubusercontent.com/dstark-maison/mdc-merchant-feed-sync/master/da
 | `size` | `size` |
 | `colour` | `color` |
 | `imageUrls` | `image_link` + `additional_image_link`, semicolon-joined (GMC's own column stays comma-joined) |
-| `delivery` | `"4-7 Werktage"` -- German, as idealo requires (matches this shop's GMC shipping policy: 1-2 day handling + 3-5 day transit). Vendors in `VENDOR_DELIVERY_TEXT` (exact Shopify vendor name) get their own text instead: SalesFever `"9-16 Werktage"` (6-11 working days handling + 3-5 transit) |
+| `delivery` | `"4-7 Werktage"` -- German, as idealo requires (matches this shop's GMC shipping policy: 1-2 day handling + 3-5 day transit). Vendors in `VENDOR_DELIVERY_TEXT` (exact Shopify vendor name) get their own text instead: SalesFever `"9-16 Werktage"` (6-11 working days handling + 3-5 transit), VIVARAISE `"6-11 Werktage"` |
 | `paymentCosts_paypal`, `paymentCosts_credit_card` | constant `"0.00"` |
 
 **Shipping-tier logic** (`deliveryCosts_dpd`, matching the GMC/Business
@@ -242,6 +242,7 @@ keyed on the exact vendor name like the shipping overrides above.
 | Vendor | `delivery` |
 |---|---|
 | SalesFever | `9-16 Werktage` |
+| VIVARAISE | `6-11 Werktage` (3-6 working days handling + 3-5 transit) |
 | everyone else | `4-7 Werktage` |
 
 Run locally the same way as `build_feed.py`:

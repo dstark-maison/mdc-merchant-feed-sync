@@ -106,6 +106,9 @@ DELIVERY_TEXT = "4-7 Werktage"
 # transit = 9-16 working days, matching the PDP and Shopify's delivery window.
 VENDOR_DELIVERY_TEXT = {
     "SalesFever": "9-16 Werktage",
+    # VIVARAISE: 3-6 working days handling + 3-5 transit = 6-11 working days
+    # (the custom.delivery_time metafield on its products).
+    "VIVARAISE": "6-11 Werktage",
 }
 
 # Shopify product Type (English, as set in Shopify) -> German idealo
@@ -125,6 +128,7 @@ CATEGORY_PATHS_DE = {
     "Duvets": "Heimtextilien > Bettdecken",
     "Throws": "Heimtextilien > Wohndecken",
     "Bedspreads": "Heimtextilien > Tagesdecken",
+    "Decorative Cushions": "Heimtextilien > Dekokissen",
     "Bed Runners": "Heimtextilien > Bettläufer",
     # Kissen, Topper, Matratzen, Betten
     "Pillows": "Heimtextilien > Kopfkissen",
@@ -162,6 +166,7 @@ IDEALO_SHIPPING_RATES_DE = {
     "std_10": "10.00",
     "sf_bulky": "119.00",
     "sf_small": "19.90",
+    "std_15": "15.00",
 }
 
 PAYMENT_COST = "0.00"
