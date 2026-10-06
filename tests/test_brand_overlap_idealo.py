@@ -95,7 +95,7 @@ def test_idealo_applies_brand_mapping_titles_and_overlap(tmp_path, monkeypatch):
     assert (by["B"]["brand"], by["B"]["title"]) == ("Coco & Cici", "Coco & Cici Bettbezug aus Tencel™-Twill, Weiß")
     assert (by["C"]["brand"], by["C"]["title"]) == ("MoST Blankets", "MoST Blankets Woll-Decke «Venezia»")
     assert (by["D"]["brand"], by["D"]["title"]) == ("VIVARAISE", "VIVARAISE Kissen Fara Bronze")
-    # SalesFever held: raw vendor as brand, title untouched
+    # SalesFever: raw vendor as brand (GTIN owner), title untouched
     assert (by["E"]["brand"], by["E"]["title"]) == ("SalesFever", "Polsterbett aus beigem Samt, 90×200")
     # empty vendor: skipped + flagged
     assert "H" not in by and stats["excluded"] == 1 and stats["accepted"] == 5

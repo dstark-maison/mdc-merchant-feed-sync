@@ -9,9 +9,8 @@
 #   white_label      Suppliers / wholesalers / marketplaces that are NOT consumer
 #                    brands. Feed `brand` = default_brand, title untouched, and
 #                    the supplier name never appears in the feed.
-#   passthrough      HELD vendors: brand stays the raw vendor string, title untouched,
-#                    exactly as before brands.yaml existed (SalesFever until the GTIN /
-#                    manufacturer decision; then move it to another section).
+#   passthrough      Vendors that are the GTIN owner but not a storefront brand: feed
+#                    `brand` = the vendor string itself, title NOT prefixed.
 #
 # An EMPTY vendor gets no brand: the offer is skipped (validation) and flagged.
 # A vendor in no section is treated as white_label (brand = default_brand) AND
@@ -31,6 +30,11 @@ white_label:
   - "Ángel Cerdá S.L."     # wound down 2026-09, 0 active products; kept so it never flags
   - "Orderchamp"           # marketplace, not a Shopify vendor value today
 
+# SalesFever -- decided 06.10.2026 (permanent). GS1 lookup confirms the 18 SalesFever
+# GTINs (prefix 4251744) are registered to SalesFever GmbH, so `brand` must be
+# "SalesFever" to match the GTIN owner (a different brand risks a GTIN/brand mismatch
+# warning in Merchant Center). On the storefront it is white-label (not a brand
+# shoppers search for), so the title is NOT prefixed with it.
 passthrough:
   - "SalesFever"
 

@@ -18,7 +18,7 @@ import build_feed  # noqa: E402
 
 CONSUMER_VENDORS = ["Coco & Cici", "Boomba Bamboo", "MoST Blankets", "VIVARAISE"]
 WHITE_LABEL_VENDORS = ["Ángel Cerdá S.L.", "Orderchamp", "Maison de Cocon"]
-PASSTHROUGH_VENDORS = ["SalesFever"]  # held: brand stays the raw vendor, title untouched
+PASSTHROUGH_VENDORS = ["SalesFever"]  # brand = the vendor (GTIN owner), title untouched
 
 
 # ---------------------------------------------------------------------------

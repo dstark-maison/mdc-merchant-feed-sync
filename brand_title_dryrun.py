@@ -79,7 +79,7 @@ def main():
             rows = [d for d in diff if d["market"] == market and d["vendor"] == vendor]
             print(f"  {vendor:16} {sum(d['title_changed'] for d in rows):4} / {sum(d['overlap_merged'] for d in rows):4}")
     lens = [d["title_len_after"] for d in diff if d["title_changed"]]
-    print(f"\nnew title length: max {max(lens)}, over 150: {sum(l > 150 for l in lens)}")
+    print(f"\nnew title length: max {max(lens, default=0)}, over 150: {sum(l > 150 for l in lens)}")
     print(f"unknown vendors in feeds: {dict(unknown) or 'none'}")
 
     for market in ("de", "idealo"):

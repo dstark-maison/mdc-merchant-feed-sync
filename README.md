@@ -185,7 +185,7 @@ exactly against Shopify's `vendor` string.
 |---|---|---|
 | `consumer_brands` (Coco & Cici, Boomba Bamboo, MoST Blankets, VIVARAISE) | the brand | `"{Brand} {title}"` |
 | `white_label` (Maison de Cocon, Angel Cerda S.L., Orderchamp) | `default_brand` = "Maison de Cocon" | unchanged |
-| `passthrough` (SalesFever -- held) | the raw vendor, as before | unchanged |
+| `passthrough` (SalesFever) | the raw vendor string (= the GTIN owner) | unchanged, not prefixed |
 | not listed | "Maison de Cocon", **flagged** in the build report ("Unknown vendors") | unchanged |
 | empty vendor | none -> offer **skipped** (validation) and flagged | -- |
 
@@ -203,7 +203,9 @@ product titles are never modified -- this is feed-only.
 1. Is it a brand shoppers search for by name? -> `consumer_brands`
    (`"RIBECO": "RIBECO"`); otherwise it is a supplier/white-label ->
    `white_label`. Not decided yet and the brand must stay as the vendor
-   string -> `passthrough`.
+   string because it is the GTIN owner but not a storefront brand (like
+   SalesFever, decided 06.10.2026: GS1 shows its GTINs are registered to
+   SalesFever GmbH) -> `passthrough`.
 2. Add its shipping label in `VENDOR_SHIPPING_LABELS` + a GMC shipping service,
    and an idealo rate (`IDEALO_SHIPPING_RATES_DE`) -- idealo fails the build
    loudly for a vendor without one.

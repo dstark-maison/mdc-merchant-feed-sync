@@ -202,7 +202,7 @@ def brand_for_vendor(vendor, config=None):
     """-> (brand, is_consumer_brand, is_unknown) for a Shopify vendor string.
     Unknown vendors fall back to the default brand, never to the vendor name,
     and is_unknown=True so the build report can flag them. "passthrough"
-    vendors keep their vendor string as the brand (held until a decision).
+    vendors keep their vendor string as the brand (brand = vendor, title not prefixed).
     An EMPTY vendor yields brand "" (flagged): the row then fails validation
     on 'brand' and is skipped, as it always has."""
     config = config or load_brand_config()
