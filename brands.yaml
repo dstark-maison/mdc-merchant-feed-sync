@@ -1,0 +1,38 @@
+# Google Merchant Center brand mapping -- THE place that decides what goes into
+# the feed's `brand` attribute and whether the brand is prefixed to the title.
+# Keys are Shopify `vendor` strings, matched exactly (after trimming).
+#
+# Three kinds of vendor:
+#   consumer_brands  A brand shoppers search for by name. Feed `brand` = the
+#                    brand, and the title becomes "{brand} {product title}"
+#                    (skipped if the title already contains the brand).
+#   white_label      Suppliers / wholesalers / marketplaces that are NOT consumer
+#                    brands. Feed `brand` = default_brand, title untouched, and
+#                    the supplier name never appears in the feed.
+#   passthrough      HELD vendors: brand stays the raw vendor string, title untouched,
+#                    exactly as before brands.yaml existed (SalesFever until the GTIN /
+#                    manufacturer decision; then move it to another section).
+#
+# An EMPTY vendor gets no brand: the offer is skipped (validation) and flagged.
+# A vendor in no section is treated as white_label (brand = default_brand) AND
+# flagged in the build report ("Unknown vendors") so someone decides which it is.
+# See README "Brand mapping" for how to add a vendor.
+
+default_brand: "Maison de Cocon"
+
+consumer_brands:
+  "Coco & Cici": "Coco & Cici"
+  "Boomba Bamboo": "Boomba Bamboo"
+  "MoST Blankets": "MoST Blankets"
+  "VIVARAISE": "VIVARAISE"
+
+white_label:
+  - "Maison de Cocon"      # our own products: brand only, title never changed
+  - "Ángel Cerdá S.L."     # wound down 2026-09, 0 active products; kept so it never flags
+  - "Orderchamp"           # marketplace, not a Shopify vendor value today
+
+passthrough:
+  - "SalesFever"
+
+# Not live yet -- decide consumer brand vs white-label before they go live:
+#   RIBECO, Robinil

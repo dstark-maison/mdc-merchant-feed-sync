@@ -172,6 +172,48 @@ no stale items from the old manual upload remain, and the "Improve item
 appearance" issues (missing description, etc.) are trending down as the new
 feed's real descriptions get processed.
 
+## Brand mapping (`brands.yaml`)
+
+`brands.yaml` decides what goes in the feed's `brand` attribute and whether the
+brand is prefixed to the title, for **both** the GMC feed and the idealo feed.
+The shared code is `build_feed.apply_brand_mapping()` (idealo imports it -- no
+second copy of the logic). It runs after the CSV / GraphQL adapters, so both
+adapters and every market/language give the same result. Vendors are matched
+exactly against Shopify's `vendor` string.
+
+| Section | Feed `brand` | Title |
+|---|---|---|
+| `consumer_brands` (Coco & Cici, Boomba Bamboo, MoST Blankets, VIVARAISE) | the brand | `"{Brand} {title}"` |
+| `white_label` (Maison de Cocon, Angel Cerda S.L., Orderchamp) | `default_brand` = "Maison de Cocon" | unchanged |
+| `passthrough` (SalesFever -- held) | the raw vendor, as before | unchanged |
+| not listed | "Maison de Cocon", **flagged** in the build report ("Unknown vendors") | unchanged |
+| empty vendor | none -> offer **skipped** (validation) and flagged | -- |
+
+Title rules (`title_with_brand`): the brand name is never translated (titles are
+already localized per market). The brand is not added if the title already
+contains it (case/punctuation-insensitive, "Coco&Cici" counts). If the title
+*starts with the brand's trailing word(s)* (ignoring TM/R marks), they are merged:
+"Boomba Bamboo" + "Bamboo Fitted Sheet" -> "Boomba Bamboo Fitted Sheet" (English
+only in practice; "Bambus" is never merged with "Bamboo"). Max 150 chars: only
+trailing attributes are shortened (whole ` - ` / ` | ` / `, ` segments first,
+then a word boundary), never the brand or the leading product term. Shopify
+product titles are never modified -- this is feed-only.
+
+**Onboarding a vendor** (e.g. RIBECO, Robinil -- decide *before* go-live):
+1. Is it a brand shoppers search for by name? -> `consumer_brands`
+   (`"RIBECO": "RIBECO"`); otherwise it is a supplier/white-label ->
+   `white_label`. Not decided yet and the brand must stay as the vendor
+   string -> `passthrough`.
+2. Add its shipping label in `VENDOR_SHIPPING_LABELS` + a GMC shipping service,
+   and an idealo rate (`IDEALO_SHIPPING_RATES_DE`) -- idealo fails the build
+   loudly for a vendor without one.
+3. Run `pytest tests/` (a test checks every shipping-label vendor is in
+   `brands.yaml`) and `python brand_title_dryrun.py` for the before/after diff.
+
+A vendor missing from `brands.yaml` never breaks the build: it publishes as
+"Maison de Cocon" with its title untouched and shows up in the report's
+"Unknown vendors" section (and a console warning) so it gets decided.
+
 ## idealo feed
 
 `idealo_feed.py` is a **standalone** sibling pipeline for the idealo
@@ -179,8 +221,8 @@ Business Center CSV import -- it imports and reuses `build_feed`'s loaders
 and validators (`load_products_from_csv`, `load_products_from_shopify_api`,
 `validate_row`, `is_known_sample_value`, `gtin_checksum_valid`, `ProductRow`,
 `MARKETS`) so idealo and Google Merchant Center can never silently diverge
-on which offers are eligible, but it never modifies `build_feed.py` and
-never shares an output file, exclusions log, or report with it -- zero
+on which offers are eligible, and applies the same `brands.yaml` brand/title
+mapping (see "Brand mapping"), but it never shares an output file, exclusions log, or report with it -- zero
 regression risk to the GMC pipeline that previously resolved a
 Misrepresentation suspension.
 

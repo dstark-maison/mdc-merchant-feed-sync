@@ -69,6 +69,7 @@ import requests
 import build_feed
 from build_feed import (
     MARKETS,
+    apply_brand_mapping,
     ProductRow,  # noqa: F401  -- re-exported for parity with build_feed's shape; not constructed directly here
     gtin_checksum_valid,  # noqa: F401  -- reused indirectly via validate_row/loaders; kept importable for tests
     is_known_sample_value,
@@ -172,6 +173,14 @@ IDEALO_SHIPPING_RATES_DE = {
 PAYMENT_COST = "0.00"
 
 
+def _vendor_of(row):
+    """The Shopify vendor of a row. Rows that went through
+    build_feed.apply_brand_mapping carry it in "vendor" (their "brand" is now
+    the mapped brand); raw adapter rows only have brand=vendor."""
+    vendor = row.get("vendor") if row.get("vendor") is not None else row.get("brand")
+    return (vendor or "").strip()
+
+
 def shipping_cost_for_row(row, product_type=""):
     """deliveryCosts_dpd for one offer: looks up build_feed.shipping_label_for's
     Merchant Center shipping_label in IDEALO_SHIPPING_RATES_DE. Reusing
@@ -181,7 +190,7 @@ def shipping_cost_for_row(row, product_type=""):
     (DEFAULT_SHIPPING_LABEL) or a label onboarded to GMC but not here (e.g.
     "std_15") -- is a config gap and fails the build loudly rather than ever
     guessing a rate."""
-    vendor = (row.get("brand") or "").strip()
+    vendor = _vendor_of(row)
     label = shipping_label_for(vendor, product_type)
     try:
         return IDEALO_SHIPPING_RATES_DE[label]
@@ -195,7 +204,7 @@ def shipping_cost_for_row(row, product_type=""):
 def delivery_text_for_row(row):
     """`delivery` for one offer: the vendor's own text if it is listed in
     VENDOR_DELIVERY_TEXT (exact vendor name), else DELIVERY_TEXT."""
-    vendor = (row.get("brand") or "").strip()
+    vendor = _vendor_of(row)
     return VENDOR_DELIVERY_TEXT.get(vendor, DELIVERY_TEXT)
 
 
@@ -341,11 +350,21 @@ def run_idealo_pipeline(rows, product_types, out_basename, run_label, variant_id
     no_type_handles = set()  # handles with no Shopify Type at all
     missing_variant_ids = []  # accepted rows whose url couldn't be deep-linked
 
-    for row in rows:
-        sample_reason = is_known_sample_value(row)
+    unknown_vendors = {}  # vendor -> offer count, flagged in the report
+    for raw_row in rows:
+        # Sample guard on the RAW row (before brand mapping can rewrite brand).
+        sample_reason = is_known_sample_value(raw_row)
         if sample_reason:
-            sample_rejected.append((row, sample_reason))
+            sample_rejected.append((raw_row, sample_reason))
             continue
+
+        # Same brands.yaml mapping as the GMC feed (shared function): brand
+        # attribute + "{Brand} {title}" for consumer brands; empty vendor ->
+        # no brand -> excluded by validate_row below.
+        row, is_unknown = apply_brand_mapping(raw_row)
+        if is_unknown:
+            label = row["vendor"] or "(empty vendor)"
+            unknown_vendors[label] = unknown_vendors.get(label, 0) + 1
 
         # idealo's feed has no availability field, so a sold-out offer would
         # be listed as buyable -- skip it (every vendor) until it is back in stock.
@@ -419,6 +438,15 @@ def run_idealo_pipeline(rows, product_types, out_basename, run_label, variant_id
         f"{sum(1 for r in accepted if not german_category_path(product_types.get(r.get('handle', ''), '')))}",
         "",
     ]
+    if unknown_vendors:
+        report_lines.append(f"## Unknown vendors ({len(unknown_vendors)}) -- add to brands.yaml")
+        report_lines.append(
+            "Not listed in brands.yaml (non-empty ones got the default brand, title unchanged; "
+            "an empty vendor gets no brand and the offer is skipped):"
+        )
+        for vendor, count in sorted(unknown_vendors.items()):
+            report_lines.append(f"- `{vendor}`: {count} offer(s)")
+        report_lines.append("")
     if unmapped_types:
         report_lines.append(f"## Unmapped product types ({len(unmapped_types)}) -- add to CATEGORY_PATHS_DE")
         report_lines.append("These Shopify Types have no German categoryPath yet, so their offers were sent with a blank categoryPath:")
@@ -467,6 +495,7 @@ def run_idealo_pipeline(rows, product_types, out_basename, run_label, variant_id
         "excluded": len(excluded),
         "sample_rejected": len(sample_rejected),
         "out_of_stock": len(out_of_stock),
+        "unknown_vendors": unknown_vendors,
         "missing_variant_ids": len(missing_variant_ids),
         "unmapped_types": dict(unmapped_types),
         "feed_path": feed_path,
@@ -510,6 +539,8 @@ def main():
         f"excluded={stats['excluded']} sample_rejected={stats['sample_rejected']} "
         f"missing_variant_ids={stats['missing_variant_ids']} unmapped_types={stats['unmapped_types']}"
     )
+    if stats["unknown_vendors"]:
+        print(f"WARNING: unknown vendors (add to brands.yaml): {stats['unknown_vendors']}")
     print(f"Feed written to {stats['feed_path']}")
     print(f"Exclusions logged to {stats['exclusions_path']}")
     print(f"Report written to {stats['report_path']}")

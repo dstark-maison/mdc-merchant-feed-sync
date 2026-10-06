@@ -48,11 +48,13 @@ import json
 import os
 import re
 import sys
+from functools import lru_cache
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
 import requests
+import yaml
 
 ROOT = Path(__file__).parent
 DATA_DIR = ROOT / "data"
@@ -160,6 +162,122 @@ def shipping_label_for(vendor, product_type=""):
     return VENDOR_SHIPPING_LABELS.get(vendor, DEFAULT_SHIPPING_LABEL)
 
 
+# ---------------------------------------------------------------------------
+# Brand mapping (GMC feed only). brands.yaml is the single source of truth for
+# which Shopify vendors are consumer brands (brand attribute + title prefix)
+# and which are suppliers/white-label (brand = "Maison de Cocon", title
+# untouched). Applied once, in run_pipeline(), AFTER both input adapters, so
+# the CSV and GraphQL paths and every market/language get the identical result.
+# The adapters still emit brand=vendor and the raw title: idealo_feed.py reuses
+# them and keys its shipping/delivery tables on that vendor string.
+# ---------------------------------------------------------------------------
+BRANDS_FILE = ROOT / "brands.yaml"
+MAX_TITLE_LEN = 150
+_TITLE_SEGMENT_SPLIT = re.compile(r"(\s+[-–|]\s+|,\s+)")
+
+
+@lru_cache(maxsize=None)
+def load_brand_config(path=BRANDS_FILE):
+    """Parses and validates brands.yaml -> {"default": str, "consumer":
+    {vendor: brand}, "white_label": set(vendors), "passthrough": set(vendors)}. Fails loudly on a
+    malformed file or a vendor listed in both sections -- a silent
+    misconfiguration here would ship wrong brands to Google."""
+    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    default = str(raw.get("default_brand") or "").strip()
+    if not default:
+        raise ValueError(f"{path}: default_brand is required")
+    consumer = {str(k).strip(): str(v).strip() for k, v in (raw.get("consumer_brands") or {}).items()}
+    white_label = {str(v).strip() for v in (raw.get("white_label") or [])}
+    passthrough = {str(v).strip() for v in (raw.get("passthrough") or [])}
+    if any(not b for b in consumer.values()):
+        raise ValueError(f"{path}: consumer_brands entries need a non-empty brand")
+    sections = [set(consumer), white_label, passthrough]
+    both = set().union(*(a & b for i, a in enumerate(sections) for b in sections[i + 1:]))
+    if both:
+        raise ValueError(f"{path}: vendor(s) listed in more than one section: {sorted(both)}")
+    return {"default": default, "consumer": consumer, "white_label": white_label, "passthrough": passthrough}
+
+
+def brand_for_vendor(vendor, config=None):
+    """-> (brand, is_consumer_brand, is_unknown) for a Shopify vendor string.
+    Unknown vendors fall back to the default brand, never to the vendor name,
+    and is_unknown=True so the build report can flag them. "passthrough"
+    vendors keep their vendor string as the brand (held until a decision).
+    An EMPTY vendor yields brand "" (flagged): the row then fails validation
+    on 'brand' and is skipped, as it always has."""
+    config = config or load_brand_config()
+    vendor = (vendor or "").strip()
+    if not vendor:
+        return "", False, True
+    if vendor in config["passthrough"]:
+        return vendor, False, False
+    if vendor in config["consumer"]:
+        return config["consumer"][vendor], True, False
+    if vendor in config["white_label"]:
+        return config["default"], False, False
+    return config["default"], False, True
+
+
+def _brand_key(text):
+    """Case/punctuation/space-insensitive key so "Coco&Cici", "COCO & CICI"
+    and "coco-cici" all count as containing the brand "Coco & Cici"."""
+    return re.sub(r"[\W_]+", "", (text or "").casefold())
+
+
+def _drop_brand_overlap(title, brand):
+    """If the title starts with the last word(s) of the brand (e.g. brand
+    "Boomba Bamboo", title "Bamboo Fitted Sheet"), drops those words from the
+    title so the brand prefix doesn't repeat them: "Boomba Bamboo Fitted
+    Sheet". Case-insensitive, ignores punctuation and TM/R marks; whole words
+    only and the same language only ("Bambus" never matches "Bamboo"). The
+    longest overlap wins; a title that is nothing but the overlap is kept."""
+    t_words, b_words = title.split(), brand.split()
+    for k in range(min(len(b_words) - 1, len(t_words) - 1), 0, -1):
+        if [_brand_key(w) for w in t_words[:k]] == [_brand_key(w) for w in b_words[-k:]]:
+            return " ".join(t_words[k:])
+    return title
+
+
+def title_with_brand(title, brand, max_len=MAX_TITLE_LEN):
+    """"{brand} {title}", unless the title already contains the brand. Over
+    max_len, only trailing attributes are shortened -- whole trailing
+    segments (split on " - ", " | ", ", ") first, then a word-boundary cut --
+    so the brand and the leading product term are never touched. The brand
+    stays untranslated; the title is already in the market's language.
+    A title that starts with the brand's trailing word(s) has them merged
+    (see _drop_brand_overlap)."""
+    title = (title or "").strip()
+    if not title or _brand_key(brand) in _brand_key(title):
+        return title
+    title = _drop_brand_overlap(title, brand)
+    new = f"{brand} {title}".strip()
+    if len(new) <= max_len:
+        return new
+    parts = _TITLE_SEGMENT_SPLIT.split(new)  # text, sep, text, sep, ...
+    while len(parts) > 1 and len("".join(parts)) > max_len:
+        del parts[-2:]  # drop the last separator + segment
+    new = "".join(parts)
+    if len(new) > max_len:
+        head = new[:max_len + 1]
+        new = head.rsplit(" ", 1)[0] if " " in head else new[:max_len]
+    return new.rstrip(" -–|,/+&")
+
+
+def apply_brand_mapping(row, config=None):
+    """Returns (new_row, is_unknown_vendor). Never mutates `row`. Vendor is
+    read from row["vendor"] if present, else row["brand"] (adapters emit
+    brand=vendor). The original vendor is preserved in new_row["vendor"]."""
+    config = config or load_brand_config()
+    vendor = (row.get("vendor") if row.get("vendor") is not None else row.get("brand")) or ""
+    brand, is_consumer, is_unknown = brand_for_vendor(vendor, config)
+    new = ProductRow(row)
+    new["vendor"] = vendor.strip()
+    new["brand"] = brand
+    if is_consumer:
+        new["title"] = title_with_brand(row.get("title", ""), brand)
+    return new, is_unknown
+
+
 # Google requires gender + age_group on Apparel & Accessories offers
 # (support.google.com/merchants/answer/6324479,
 # support.google.com/merchants/answer/6324463). The real source of truth is
@@ -239,7 +357,7 @@ class ProductRow(dict):
     behavior, just a documented shape so callers don't have to guess keys:
     id, title, description, link, image_link, additional_image_link, price,
     availability, brand, condition, gtin, mpn, item_group_id, color, size,
-    material, gender, age_group, handle (handle is feed-internal, stripped
+    material, gender, age_group, handle, vendor (handle and vendor are feed-internal, stripped
     before writing -- kept only for grouping/debugging). additional_image_link is optional --
     Google's own format for it in a tab/comma-delimited feed is a single
     column holding up to 10 comma-separated URLs
@@ -551,6 +669,7 @@ def load_products_from_csv(path):
             price_amount=raw.get("Variant Price", "").strip(),
             price=f"{raw.get('Variant Price', '').strip()} EUR" if raw.get("Variant Price", "").strip() else "",
             availability="in_stock" if qty > 0 else "out_of_stock",
+            vendor=base["vendor"],
             brand=base["vendor"],
             condition="new",
             gtin=barcode if gtin_checksum_valid(barcode) else "",
@@ -765,6 +884,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                     price_amount=price_amount,
                     price=f"{price_amount} EUR" if price_amount else "",
                     availability="in_stock" if qty > 0 else "out_of_stock",
+                    vendor=vendor,
                     brand=vendor,
                     condition="new",
                     gtin=barcode if gtin_checksum_valid(barcode) else "",
@@ -797,11 +917,18 @@ FEED_COLUMNS = [
 def run_pipeline(rows, out_basename, run_label, market="de"):
     accepted, excluded, sample_rejected, empty_description, missing_translation = [], [], [], [], []
 
-    for row in rows:
-        sample_reason = is_known_sample_value(row)
+    unknown_vendors = {}  # vendor -> offer count, flagged in the report
+    for raw_row in rows:
+        # Sample-data guard runs on the RAW row so a vendor literally named
+        # "Google" is still caught before the mapping rewrites brand.
+        sample_reason = is_known_sample_value(raw_row)
         if sample_reason:
-            sample_rejected.append((row, sample_reason))
+            sample_rejected.append((raw_row, sample_reason))
             continue
+        row, is_unknown = apply_brand_mapping(raw_row)
+        if is_unknown:
+            label = row["vendor"] or "(empty vendor)"
+            unknown_vendors[label] = unknown_vendors.get(label, 0) + 1
 
         if row.get("translation_missing"):
             # Distinct from empty_description: the German catalog copy
@@ -859,6 +986,16 @@ def run_pipeline(rows, out_basename, run_label, market="de"):
         f"- Excluded for missing locale translation (title and/or body_html not yet translated): {len(missing_translation)}",
         "",
     ]
+    if unknown_vendors:
+        report_lines.append(f"## Unknown vendors ({len(unknown_vendors)}) -- add to brands.yaml")
+        report_lines.append(
+            f"Not listed in brands.yaml, so brand defaulted to \"{load_brand_config()['default']}\" "
+            "with the title unchanged. Decide consumer brand vs white-label. "
+            "An empty vendor gets no brand and the offer is SKIPPED (see Validation exclusions):"
+        )
+        for vendor, count in sorted(unknown_vendors.items()):
+            report_lines.append(f"- `{vendor}`: {count} offer(s)")
+        report_lines.append("")
     if sample_rejected:
         report_lines.append(f"## Sample-data rejects ({len(sample_rejected)}) -- root-cause guard fired")
         report_lines.append(
@@ -913,6 +1050,7 @@ def run_pipeline(rows, out_basename, run_label, market="de"):
         "accepted": len(accepted),
         "excluded": len(excluded),
         "sample_rejected": len(sample_rejected),
+        "unknown_vendors": unknown_vendors,
         "empty_description": empty_description,
         "missing_translation": missing_translation,
         "feed_csv_path": feed_csv_path,
@@ -975,6 +1113,8 @@ def main():
         f"empty_description={len(stats['empty_description'])} "
         f"missing_translation={len(stats['missing_translation'])}"
     )
+    if stats["unknown_vendors"]:
+        print(f"WARNING: unknown vendors (add to brands.yaml; non-empty ones defaulted to '{load_brand_config()['default']}', empty-vendor offers skipped): {stats['unknown_vendors']}")
     print(f"Feed written to {stats['feed_csv_path']} and {stats['feed_txt_path']}")
     print(f"Exclusions logged to {stats['exclusions_path']}")
     print(f"Report written to {stats['report_path']}")
