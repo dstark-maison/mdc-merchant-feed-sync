@@ -1109,3 +1109,21 @@ def test_netherlands_is_served_by_the_be_nl_and_en_feeds():
     assert "Netherlands" in build_feed.MARKETS["be-nl"]["countries"]
     assert "Netherlands" in build_feed.MARKETS["en"]["countries"]
     assert not any(m.get("excluded_vendors") for m in build_feed.MARKETS.values())
+
+
+def test_usable_gtin_omits_placeholder_empty_and_invalid_keeps_real():
+    assert build_feed.usable_gtin("3210800000000") == ""      # VIVARAISE "awaiting EAN" placeholder
+    assert build_feed.usable_gtin("") == ""
+    assert build_feed.usable_gtin(None) == ""
+    assert build_feed.usable_gtin("3210804351049") == "3210804351049"
+    assert build_feed.usable_gtin("0793002340464") == "0793002340464"  # leading-zero EAN stays intact
+
+
+def test_usable_gtin_placeholder_stays_out_even_if_it_validated(monkeypatch):
+    monkeypatch.setattr(build_feed, "gtin_checksum_valid", lambda g: True)
+    assert build_feed.usable_gtin("3210800000000") == ""
+
+
+def test_shipping_labels_for_onboarded_vendors():
+    assert build_feed.shipping_label_for("VIVARAISE", "Throws") == "std_15"
+    assert build_feed.shipping_label_for("MoST Blankets", "Throws") == "std_990"

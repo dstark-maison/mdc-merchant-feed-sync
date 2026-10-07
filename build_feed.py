@@ -429,6 +429,20 @@ def gtin_checksum_valid(gtin):
     return (10 - (total % 10)) % 10 == check
 
 
+# Barcodes used as "no EAN yet" placeholders by suppliers (VIVARAISE: 3210800000000). They are never real GTINs:
+# the feed omits gtin for them and relies on brand + mpn (= SKU). Today this value also fails the GS1 checksum, but
+# that is a coincidence -- list placeholders here so they stay out even if one ever validates.
+PLACEHOLDER_BARCODES = {"3210800000000"}
+
+
+def usable_gtin(barcode):
+    """Barcode as a feed gtin, or "" when it is empty, a known placeholder, or fails the GS1 checksum."""
+    barcode = (barcode or "").strip()
+    if barcode in PLACEHOLDER_BARCODES:
+        return ""
+    return barcode if gtin_checksum_valid(barcode) else ""
+
+
 def is_known_sample_value(row):
     """Hard reject: does this row match a known Google documentation sample
     value? Returns a reason string if so, else None. Checked independently
@@ -672,7 +686,7 @@ def load_products_from_csv(path):
             vendor=base["vendor"],
             brand=base["vendor"],
             condition="new",
-            gtin=barcode if gtin_checksum_valid(barcode) else "",
+            gtin=usable_gtin(barcode),
             mpn=sku,
             item_group_id=handle,
             color=color,
@@ -887,7 +901,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                     vendor=vendor,
                     brand=vendor,
                     condition="new",
-                    gtin=barcode if gtin_checksum_valid(barcode) else "",
+                    gtin=usable_gtin(barcode),
                     mpn=sku,
                     item_group_id=handle,
                     color=color,
