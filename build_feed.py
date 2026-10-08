@@ -755,6 +755,7 @@ query($cursor: String, $locale: String!) {
         variants(first: 100) {
           edges {
             node {
+              legacyResourceId
               sku
               price
               barcode
@@ -885,6 +886,11 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                 }
                 color = color_pattern_label or _option_value_containing(selected_options, "colo")
                 size = strip_size_quantity_prefix(_option_value_containing(selected_options, "size"))
+                # Native deep link: Shopify preselects the variant for ?variant=<numeric id>. The old
+                # ?variant_sku=<sku> parameter is never read by the theme, so every offer landed on the default
+                # variant (and each such URL was a separate crawl target in Search Console).
+                variant_id = str(v.get("legacyResourceId") or "").strip()
+                variant_query = f"variant={quote(variant_id)}" if variant_id else f"variant_sku={quote(sku)}"
                 gender = gender_for(product_type, (v.get("genderMetafield") or {}).get("value"))
                 age_group = age_group_for(product_type, (v.get("ageGroupMetafield") or {}).get("value"))
                 rows.append(ProductRow(
@@ -892,7 +898,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                     id=sku,
                     title=title,
                     description=description,
-                    link=f"https://{STORE_DOMAIN_PUBLIC}{link_prefix}/products/{quote(link_handle)}?variant_sku={quote(sku)}",
+                    link=f"https://{STORE_DOMAIN_PUBLIC}{link_prefix}/products/{quote(link_handle)}?{variant_query}",
                     image_link=image,
                     additional_image_link=",".join(additional_images),
                     price_amount=price_amount,

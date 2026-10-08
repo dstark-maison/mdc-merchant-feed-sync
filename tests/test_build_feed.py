@@ -1127,3 +1127,31 @@ def test_usable_gtin_placeholder_stays_out_even_if_it_validated(monkeypatch):
 def test_shipping_labels_for_onboarded_vendors():
     assert build_feed.shipping_label_for("VIVARAISE", "Throws") == "std_15"
     assert build_feed.shipping_label_for("MoST Blankets", "Throws") == "std_990"
+
+
+@patch("build_feed.requests.post")
+def test_load_products_from_shopify_api_links_to_native_variant_id(mock_post):
+    """Links carry Shopify's native ?variant=<numeric id> (the theme ignores ?variant_sku=); a variant
+    without an id falls back to variant_sku rather than dropping the parameter."""
+    build_feed._cached_token = None
+    token_response = MagicMock()
+    token_response.json.return_value = {"access_token": "mock-token"}
+    token_response.raise_for_status.return_value = None
+    import copy
+    payload = copy.deepcopy(MOCK_GRAPHQL_RESPONSE)
+    variants = payload["data"]["products"]["edges"][0]["node"]["variants"]["edges"]
+    variants[0]["node"]["legacyResourceId"] = "52019876543"
+    graphql_response = MagicMock()
+    graphql_response.json.return_value = payload
+    graphql_response.raise_for_status.return_value = None
+    mock_post.side_effect = [token_response, graphql_response]
+
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
+    assert rows[0]["link"].endswith("?variant=52019876543")
+    assert "variant_sku" not in rows[0]["link"]
+
+    build_feed._cached_token = None
+    variants[0]["node"].pop("legacyResourceId")
+    mock_post.side_effect = [token_response, graphql_response]
+    rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
+    assert rows[0]["link"].endswith("?variant_sku=MOCK-1")
