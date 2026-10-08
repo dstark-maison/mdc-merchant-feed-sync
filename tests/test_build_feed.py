@@ -1182,12 +1182,12 @@ def test_manual_exclusion_matches_handle_and_variant_id_or_size_never_sku():
     assert build_feed.manual_exclusion_reason(_dup_row("bedspread-hunter", "S1", base + "?variant=999", "200 x 220 cm"), rules) is None
 
 
-def test_feed_exclusions_file_is_valid_and_covers_hunter_and_aegean():
+def test_feed_exclusions_file_is_valid_and_covers_aegean_not_hunter():
     rules = build_feed.load_feed_exclusions()
     handles = {r[0] for r in rules}
-    assert {"wool-bed-blanket-hunter-140-200", "merino-wool-bed-blanket-aegean-140-200"} <= handles
-    hunter = [r for r in rules if r[0] == "wool-bed-blanket-hunter-140-200"][0]
-    assert hunter[1] == "54967568957773" and hunter[2] == "200x220"
+    assert "merino-wool-bed-blanket-aegean-140-200" in handles
+    # Hunter's standalone bedspread was archived 2026-10-08, so its 200x220 variant is the real offer again
+    assert "wool-bed-blanket-hunter-140-200" not in handles
 
 
 def test_feed_exclusions_malformed_rule_fails_loudly(tmp_path):
@@ -1198,17 +1198,17 @@ def test_feed_exclusions_malformed_rule_fails_loudly(tmp_path):
 
 
 def test_run_pipeline_logs_manual_exclusions_and_keeps_the_legit_sibling(tmp_path):
-    base = "https://www.maisondecocon.com/products/wool-bed-blanket-hunter-140-200"
-    dup = _dup_row("wool-bed-blanket-hunter-140-200", "8720849140560", base + "?variant=54967568957773", "200 x 220 cm")
-    ok = _dup_row("wool-bed-blanket-hunter-140-200", "8720849140553", base + "?variant=54449153114445", "140 x 200 cm")
+    base = "https://www.maisondecocon.com/products/merino-wool-bed-blanket-aegean-140-200"
+    dup = _dup_row("merino-wool-bed-blanket-aegean-140-200", "8720849140447-copy", base + "?variant=111", "200 x 220 cm")
+    ok = _dup_row("merino-wool-bed-blanket-aegean-140-200", "8720849140454", base + "?variant=222", "140 x 200 cm")
     orig = build_feed.DATA_DIR, build_feed.REPORTS_DIR
     build_feed.DATA_DIR, build_feed.REPORTS_DIR = tmp_path / "data", tmp_path / "reports"
     build_feed.DATA_DIR.mkdir(); build_feed.REPORTS_DIR.mkdir()
     try:
         stats = build_feed.run_pipeline([dup, ok], "unit_test_manual_excl", "unit test run")
         assert stats["accepted"] == 1 and stats["excluded"] == 1
-        assert "8720849140560" not in stats["feed_csv_path"].read_text(encoding="utf-8")
+        assert "8720849140447-copy" not in stats["feed_csv_path"].read_text(encoding="utf-8")
         log = stats["exclusions_path"].read_text(encoding="utf-8")
-        assert "8720849140560" in log and "manual exclusion rule" in log
+        assert "8720849140447-copy" in log and "manual exclusion rule" in log
     finally:
         build_feed.DATA_DIR, build_feed.REPORTS_DIR = orig
