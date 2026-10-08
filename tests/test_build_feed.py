@@ -1155,3 +1155,60 @@ def test_load_products_from_shopify_api_links_to_native_variant_id(mock_post):
     mock_post.side_effect = [token_response, graphql_response]
     rows = build_feed.load_products_from_shopify_api("test-shop.myshopify.com", "cid", "secret")
     assert rows[0]["link"].endswith("?variant_sku=MOCK-1")
+
+
+# ---------------------------------------------------------------------------
+# feed_exclusions.yaml -- stray supplier-sync duplicates
+# ---------------------------------------------------------------------------
+def _dup_row(handle, sku, link, size, **kw):
+    return build_feed.ProductRow(
+        id=sku, handle=handle, title="T", description="D", link=link, image_link="https://x.jpg",
+        availability="in_stock", price="10.00 EUR", price_amount="10.00", brand="Brand", condition="new",
+        gtin="4006381333931", mpn=sku, size=size, translation_missing=False, **kw,
+    )
+
+
+def test_manual_exclusion_matches_handle_and_variant_id_or_size_never_sku():
+    rules = (("blanket-hunter", "54967568957773", "200x220", "dup"),)
+    base = "https://www.maisondecocon.com/products/blanket-hunter"
+    # by variant id
+    assert build_feed.manual_exclusion_reason(_dup_row("blanket-hunter", "S1", base + "?variant=54967568957773", "140 x 200 cm"), rules) == "dup"
+    # recreated with a NEW variant id: the size rule still catches it
+    assert build_feed.manual_exclusion_reason(_dup_row("blanket-hunter", "S1", base + "?variant=999", "200 x 220 cm"), rules) == "dup"
+    assert build_feed.manual_exclusion_reason(_dup_row("blanket-hunter", "S1", base + "?variant=999", "200×220"), rules) == "dup"
+    # the legitimate sibling size of the same product is kept
+    assert build_feed.manual_exclusion_reason(_dup_row("blanket-hunter", "S2", base + "?variant=111", "140 x 200 cm"), rules) is None
+    # same size on a different product is kept, and the SKU is irrelevant
+    assert build_feed.manual_exclusion_reason(_dup_row("bedspread-hunter", "S1", base + "?variant=999", "200 x 220 cm"), rules) is None
+
+
+def test_feed_exclusions_file_is_valid_and_covers_hunter_and_aegean():
+    rules = build_feed.load_feed_exclusions()
+    handles = {r[0] for r in rules}
+    assert {"wool-bed-blanket-hunter-140-200", "merino-wool-bed-blanket-aegean-140-200"} <= handles
+    hunter = [r for r in rules if r[0] == "wool-bed-blanket-hunter-140-200"][0]
+    assert hunter[1] == "54967568957773" and hunter[2] == "200x220"
+
+
+def test_feed_exclusions_malformed_rule_fails_loudly(tmp_path):
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("exclusions:\n  - handle: x\n    reason: why\n", encoding="utf-8")  # no variant_id / size
+    with pytest.raises(ValueError):
+        build_feed.load_feed_exclusions(bad)
+
+
+def test_run_pipeline_logs_manual_exclusions_and_keeps_the_legit_sibling(tmp_path):
+    base = "https://www.maisondecocon.com/products/wool-bed-blanket-hunter-140-200"
+    dup = _dup_row("wool-bed-blanket-hunter-140-200", "8720849140560", base + "?variant=54967568957773", "200 x 220 cm")
+    ok = _dup_row("wool-bed-blanket-hunter-140-200", "8720849140553", base + "?variant=54449153114445", "140 x 200 cm")
+    orig = build_feed.DATA_DIR, build_feed.REPORTS_DIR
+    build_feed.DATA_DIR, build_feed.REPORTS_DIR = tmp_path / "data", tmp_path / "reports"
+    build_feed.DATA_DIR.mkdir(); build_feed.REPORTS_DIR.mkdir()
+    try:
+        stats = build_feed.run_pipeline([dup, ok], "unit_test_manual_excl", "unit test run")
+        assert stats["accepted"] == 1 and stats["excluded"] == 1
+        assert "8720849140560" not in stats["feed_csv_path"].read_text(encoding="utf-8")
+        log = stats["exclusions_path"].read_text(encoding="utf-8")
+        assert "8720849140560" in log and "manual exclusion rule" in log
+    finally:
+        build_feed.DATA_DIR, build_feed.REPORTS_DIR = orig

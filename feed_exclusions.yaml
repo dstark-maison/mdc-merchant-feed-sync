@@ -1,0 +1,27 @@
+# Variants that must never reach a product feed (Google Merchant Center and idealo).
+#
+# Why a rules file: the Orderchamp import structure is enforced by the supplier sync, which matches by SKU and
+# RE-CREATES a variant if it is deleted (the Hunter one was deleted 2026-09-27 and came back 2026-10-06). So these
+# stray duplicates cannot be removed in Shopify. Each is a second listing of an item that already exists as its own
+# product, under the same SKU, so it would put a duplicate offer id into the feed.
+#
+# Never rename or delete these in Shopify; exclude them here instead. Do NOT match by SKU: the duplicate shares its
+# SKU with the legitimate product.
+#
+# A rule matches a feed row when `handle` equals the product handle AND (`variant_id` equals the numeric Shopify
+# variant id in the row's ?variant= link OR `size` equals the row's size, ignoring case/spaces/"x"/"×"/"cm").
+# A size rule also catches the variant if the sync re-creates it with a new id. Every excluded row is written to
+# the feed's *_exclusions.csv with the reason below.
+exclusions:
+  - handle: wool-bed-blanket-hunter-140-200
+    variant_id: "54967568957773"
+    size: "200 x 220 cm"
+    reason: >-
+      Duplicate of the standalone product wool-bedspread-hunter-200-220 (same SKU 8720849140560); recreated by the
+      Orderchamp sync on 2026-10-06 after being deleted on 2026-09-27.
+
+  - handle: merino-wool-bed-blanket-aegean-140-200
+    size: "200 x 220 cm"
+    reason: >-
+      Duplicate of the standalone product merino-wool-bedspread-aegean-200-220 (same SKU 8720849140447-copy). Deleted
+      on 2026-10-08; pre-emptive rule in case the Orderchamp sync recreates it, as it did for Hunter.

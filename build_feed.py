@@ -263,6 +263,53 @@ def title_with_brand(title, brand, max_len=MAX_TITLE_LEN):
     return new.rstrip(" -–|,/+&")
 
 
+EXCLUSIONS_FILE = ROOT / "feed_exclusions.yaml"
+_VARIANT_IN_LINK = re.compile(r"[?&]variant=(\d+)")
+
+
+def _norm_size(value):
+    """'200 x 220 cm' / '200×220' / '200X220CM' -> '200x220' (for rule matching only)."""
+    return re.sub(r"\s+", "", str(value or "").lower().replace("×", "x").replace("cm", ""))
+
+
+@lru_cache(maxsize=None)
+def load_feed_exclusions(path=EXCLUSIONS_FILE):
+    """Parses feed_exclusions.yaml -> tuple of (handle, variant_id, normalised_size, reason). A missing file means
+    no rules. Fails loudly on a malformed rule: a silently ignored rule would put a duplicate offer id back in the feed."""
+    p = Path(path)
+    if not p.exists():
+        return ()
+    raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    rules = []
+    for i, r in enumerate(raw.get("exclusions") or []):
+        handle = str(r.get("handle") or "").strip()
+        reason = " ".join(str(r.get("reason") or "").split())
+        variant_id = str(r.get("variant_id") or "").strip()
+        size = _norm_size(r.get("size"))
+        if not handle or not reason or not (variant_id or size):
+            raise ValueError(f"{path}: exclusion #{i + 1} needs handle, reason and at least one of variant_id / size")
+        rules.append((handle, variant_id, size, reason))
+    return tuple(rules)
+
+
+def manual_exclusion_reason(row, rules=None):
+    """The reason string if a feed_exclusions.yaml rule matches this row (same product handle AND the numeric
+    variant id in its ?variant= link OR its size), else None. Matches on handle, never on SKU: the stray
+    duplicates share their SKU with the legitimate product."""
+    rules = load_feed_exclusions() if rules is None else rules
+    handle = str(row.get("handle") or "")
+    m = _VARIANT_IN_LINK.search(str(row.get("link") or ""))
+    variant_id = m.group(1) if m else ""
+    size = _norm_size(row.get("size"))
+    for r_handle, r_variant, r_size, reason in rules:
+        if r_handle != handle:
+            continue
+        if (r_variant and r_variant == variant_id) or (r_size and r_size == size):
+            return reason
+    return None
+
+
+
 def apply_brand_mapping(row, config=None):
     """Returns (new_row, is_unknown_vendor). Never mutates `row`. Vendor is
     read from row["vendor"] if present, else row["brand"] (adapters emit
@@ -949,6 +996,11 @@ def run_pipeline(rows, out_basename, run_label, market="de"):
         if is_unknown:
             label = row["vendor"] or "(empty vendor)"
             unknown_vendors[label] = unknown_vendors.get(label, 0) + 1
+
+        manual = manual_exclusion_reason(row)
+        if manual:
+            excluded.append((row, [f"manual exclusion rule (feed_exclusions.yaml): {manual}"]))
+            continue
 
         if row.get("translation_missing"):
             # Distinct from empty_description: the German catalog copy

@@ -73,6 +73,7 @@ from build_feed import (
     ProductRow,  # noqa: F401  -- re-exported for parity with build_feed's shape; not constructed directly here
     gtin_checksum_valid,  # noqa: F401  -- reused indirectly via validate_row/loaders; kept importable for tests
     is_known_sample_value,
+    manual_exclusion_reason,
     shipping_label_for,
     validate_row,
     load_products_from_csv,
@@ -365,6 +366,12 @@ def run_idealo_pipeline(rows, product_types, out_basename, run_label, variant_id
         if is_unknown:
             label = row["vendor"] or "(empty vendor)"
             unknown_vendors[label] = unknown_vendors.get(label, 0) + 1
+
+        # Stray supplier-sync duplicates (feed_exclusions.yaml), same rules as the GMC feed.
+        manual = manual_exclusion_reason(row)
+        if manual:
+            excluded.append((row, [f"manual exclusion rule (feed_exclusions.yaml): {manual}"]))
+            continue
 
         # idealo's feed has no availability field, so a sold-out offer would
         # be listed as buyable -- skip it (every vendor) until it is back in stock.
