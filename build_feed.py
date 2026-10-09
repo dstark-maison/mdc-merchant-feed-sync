@@ -368,6 +368,117 @@ def age_group_for(product_type, variant_age_group=""):
 STATUTORY_GUARANTEE_YEARS = 2
 
 # ---------------------------------------------------------------------------
+# Labelled spec line + structured attributes (GMC "include details customers
+# are looking for"). For vendors in VENDOR_SPEC_CONFIG, run_pipeline() appends
+#   Colour: {c} · Material: {m} · Thread count: {tc} · Pattern: {p}
+# (localised, see SPEC_LABELS) on a new line after the description, and sets the
+# color / material / pattern feed attributes from the same values.
+#
+# material, thread_count and pattern are FACTUAL CLAIMS about the product on a
+# feed for an account with a prior Misrepresentation suspension, so none is
+# derived or defaulted here: they come only from this dict.
+#   material      {locale: text}. REQUIRED for every configured vendor -- an empty
+#                 value raises SpecConfigError (nothing is written) -- unless the vendor
+#                 sets material_pending: True, which drops the segment and attribute.
+#   thread_count  a string, or None to omit the segment for that vendor.
+#   pattern       {locale: text}; a missing/empty locale just omits the segment.
+#                 Optional pattern_handle_prefixes restricts it to matching product handles.
+# enabled: False  lists the vendor but leaves its offers completely untouched.
+# Colour is not configured: it is the variant's own Color option (brand colour
+# names kept verbatim), else the product's color-pattern metafield label.
+# ---------------------------------------------------------------------------
+VENDOR_SPEC_CONFIG = {
+    "Boomba Bamboo": {
+        # Fibre composition not yet confirmed by the supplier: drop the material segment and attribute rather
+        # than raise. Never fall back to the maison_seo.fabric metafield or any "100% bamboo" text.
+        "material_pending": True,
+        "material": {"en": "", "de": "", "fr": "", "nl": ""},
+        "thread_count": "400",
+        "pattern": {"en": "Solid", "de": "Uni", "fr": "Uni", "nl": "Effen"},
+        # Pattern applies ONLY to products whose base handle starts with one of these (fitted sheets and
+        # mattress-topper fitted sheets). Bedding sets, duvet covers and pillowcases get no pattern.
+        "pattern_handle_prefixes": ("bamboo-fitted-sheet",),
+    },
+    "VIVARAISE": {
+        # Decided 2026-10-09: the fabric data is mixed (cotton, polyester, linen, hemp, wool, ...), so no single
+        # material claim is true for the vendor. material_pending, and enabled False = offers pass through
+        # byte-identical to the pre-feature feed: no spec line, no colour/material/pattern change. (material_pending
+        # alone would still blank the material attribute and add a colour-only spec line.)
+        "enabled": False,
+        "material_pending": True,
+        "material": {"en": "", "de": "", "fr": "", "nl": ""},
+        "thread_count": None,
+        "pattern": {"en": "", "de": "", "fr": "", "nl": ""},
+    },
+}
+
+SPEC_LABELS = {
+    "en": ("Colour", "Material", "Thread count", "Pattern", ": "),
+    "de": ("Farbe", "Material", "Fadenzahl", "Muster", ": "),
+    "fr": ("Couleur", "Matière", "Nombre de fils", "Motif", " : "),
+    "nl": ("Kleur", "Materiaal", "Draaddichtheid", "Patroon", ": "),
+}
+SPEC_SEPARATOR = " · "
+MAX_DESCRIPTION_LEN = 5000  # Google Merchant Center description limit
+
+
+class SpecConfigError(ValueError):
+    """VENDOR_SPEC_CONFIG is incomplete for a vendor that has offers in the feed."""
+
+
+def title_case_colour(value):
+    """Brand colour names are Title Case in the product titles ("Coco White", "Soft Taupe") while some variant
+    options are not ("Coco white"): capitalise each word's first letter, leave the rest as is."""
+    return " ".join(w[:1].upper() + w[1:] for w in (value or "").split())
+
+
+def spec_line(locale, colour, material, thread_count, pattern):
+    """Localised spec line; a segment with a blank value is skipped, never emitted empty."""
+    c_l, m_l, t_l, p_l, colon = SPEC_LABELS[locale]
+    parts = [(c_l, colour), (m_l, material), (t_l, thread_count), (p_l, pattern)]
+    return SPEC_SEPARATOR.join(f"{label}{colon}{value.strip()}" for label, value in parts if value and value.strip())
+
+
+def append_spec_line(description, spec, max_len=MAX_DESCRIPTION_LEN):
+    """description + "
+" + spec within max_len. Only the existing description is shortened (word boundary, "...")
+    when needed; the spec line is never cut. Idempotent if the spec line is already present."""
+    if not spec or spec in description:
+        return description
+    room = max_len - len(spec) - 1
+    if len(description) > room:
+        head = description[:max(room - 3, 0) + 1]
+        description = (head.rsplit(" ", 1)[0] if " " in head else head[:-1]).rstrip(" ,.;:-") + "..."
+    return f"{description}\n{spec}"
+
+
+def apply_spec_enrichment(row, locale):
+    """Returns (new_row, vendor_was_configured). Never mutates `row`. Vendors not in VENDOR_SPEC_CONFIG are returned
+    unchanged. Sets color / material / pattern from the spec values and appends the spec line to the description."""
+    vendor = (row.get("vendor") or "").strip()
+    cfg = VENDOR_SPEC_CONFIG.get(vendor)
+    if cfg is None or cfg.get("enabled", True) is False:
+        return row, False
+    material = ((cfg.get("material") or {}).get(locale) or "").strip()
+    if cfg.get("material_pending"):
+        material = ""
+    elif not material:
+        raise SpecConfigError(
+            f"VENDOR_SPEC_CONFIG['{vendor}']['material']['{locale}'] is empty -- fill it in build_feed.py before building")
+    colour = title_case_colour((row.get("option_color") or row.get("color") or "").strip())
+    thread_count = (cfg.get("thread_count") or "").strip()
+    pattern = ((cfg.get("pattern") or {}).get(locale) or "").strip()
+    prefixes = cfg.get("pattern_handle_prefixes")
+    if prefixes and not str(row.get("handle") or "").startswith(tuple(prefixes)):
+        pattern = ""
+    new = ProductRow(row)
+    new["color"], new["material"], new["pattern"] = colour, material, pattern
+    new["description"] = append_spec_line(
+        row.get("description", ""), spec_line(locale, colour, material, thread_count, pattern))
+    return new, True
+
+
+# ---------------------------------------------------------------------------
 # Known Google sample/placeholder values -- hard rejects, logged separately.
 # Sourced from Google's own Merchant Center / Content API sample feed
 # documentation (support.google.com/merchants/answer/7052112 and the Content
@@ -422,13 +533,11 @@ class ProductRow(dict):
     (see strip_size_quantity_prefix). material: the maison_seo.fabric
     metafield. A product with no Color option and no color-pattern metafield
     (some Casilin and Boomba Bedding Set products) gets color="" rather than
-    a value parsed out of its title -- never invented, never defaulted. There
-    is deliberately no `pattern` field: no source of pattern data exists
-    anywhere in this catalog's Shopify data (no option, metafield, or tag),
-    and defaulting one in (e.g. "solid") would be fabricated data on a feed
-    for an account with a prior Misrepresentation suspension -- see the
-    module docstring's sample-data guard for why that risk is taken
-    seriously here.
+    a value parsed out of its title -- never invented, never defaulted. `pattern` is never read from Shopify (no option, metafield or tag carries it); it exists
+    only for vendors in VENDOR_SPEC_CONFIG, set from that dict together with material
+    (overriding the fabric metafield) -- see apply_spec_enrichment. `option_color` is the
+    raw variant Color option, kept so the spec line can use brand colour names rather
+    than the color-pattern label.
 
     gender/age_group: a real variant-level mm-google-shopping.gender /
     age_group metafield takes priority when set; PRODUCT_TYPE_GENDER_
@@ -737,6 +846,7 @@ def load_products_from_csv(path):
             mpn=sku,
             item_group_id=handle,
             color=color,
+            option_color=color,
             size=size,
             # Shopify's default "Export products" CSV does not include custom
             # metafields (maison_seo.fabric would need to be explicitly added
@@ -931,7 +1041,8 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                     (opt.get("name") or "").strip().lower(): (opt.get("value") or "").strip()
                     for opt in (v.get("selectedOptions") or [])
                 }
-                color = color_pattern_label or _option_value_containing(selected_options, "colo")
+                option_color = _option_value_containing(selected_options, "colo")
+                color = color_pattern_label or option_color
                 size = strip_size_quantity_prefix(_option_value_containing(selected_options, "size"))
                 # Native deep link: Shopify preselects the variant for ?variant=<numeric id>. The old
                 # ?variant_sku=<sku> parameter is never read by the theme, so every offer landed on the default
@@ -958,6 +1069,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                     mpn=sku,
                     item_group_id=handle,
                     color=color,
+                    option_color=option_color,
                     size=size,
                     material=material,
                     shipping_label=shipping_label_for(vendor, product_type),
@@ -977,11 +1089,13 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
 FEED_COLUMNS = [
     "id", "title", "description", "link", "image_link", "additional_image_link",
     "availability", "price", "brand", "condition", "gtin", "mpn", "item_group_id",
-    "color", "size", "material", "shipping_label", "gender", "age_group",
+    "color", "size", "material", "pattern", "shipping_label", "gender", "age_group",
 ]
 
 
 def run_pipeline(rows, out_basename, run_label, market="de"):
+    locale = MARKETS[market]["locale"]
+    spec_enriched = 0
     accepted, excluded, sample_rejected, empty_description, missing_translation = [], [], [], [], []
 
     unknown_vendors = {}  # vendor -> offer count, flagged in the report
@@ -1001,6 +1115,10 @@ def run_pipeline(rows, out_basename, run_label, market="de"):
         if manual:
             excluded.append((row, [f"manual exclusion rule (feed_exclusions.yaml): {manual}"]))
             continue
+
+        if not row.get("translation_missing"):
+            row, configured = apply_spec_enrichment(row, locale)
+            spec_enriched += configured
 
         if row.get("translation_missing"):
             # Distinct from empty_description: the German catalog copy
@@ -1056,6 +1174,7 @@ def run_pipeline(rows, out_basename, run_label, market="de"):
         f"- Rejected (known Google sample/placeholder data): {len(sample_rejected)}",
         f"- Excluded for empty body_html -- needs written content (not auto-generated): {len(empty_description)}",
         f"- Excluded for missing locale translation (title and/or body_html not yet translated): {len(missing_translation)}",
+        f"- Spec line appended (VENDOR_SPEC_CONFIG vendors, before validation): {spec_enriched}",
         "",
     ]
     if unknown_vendors:
