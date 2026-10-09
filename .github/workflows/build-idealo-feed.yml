@@ -1,8 +1,14 @@
 name: idealo feed daily build
 
 on:
+  # Runs right after "Merchant feed daily build" succeeds (whatever started it: dispatch, cron or manual) -- separate
+  # job, separate failure domain. The cron is a fallback only, off the hour (see build-feed.yml).
+  workflow_run:
+    workflows: ["Merchant feed daily build"]
+    types: [completed]
+    branches: [master]
   schedule:
-    - cron: "30 6 * * *"  # 06:30 UTC daily, after build-feed.yml's 06:00 UTC GMC run -- separate job, separate failure domain
+    - cron: "17 5 * * *"  # fallback only, 05:17 UTC
   workflow_dispatch: {}  # also runnable manually from the Actions tab
 
 # Shared with build-feed.yml so the two never commit+push to master at the
@@ -14,11 +20,13 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # For workflow_run, only continue when the feed build it follows succeeded; schedule/dispatch always run.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -37,7 +45,7 @@ jobs:
 
       - name: Upload feed + report as artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: idealo-feed-build-${{ github.run_number }}
           path: |

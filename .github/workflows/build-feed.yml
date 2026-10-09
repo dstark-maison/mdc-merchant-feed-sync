@@ -1,9 +1,16 @@
 name: Merchant feed daily build
 
 on:
+  # Primary trigger: an external scheduler (cron-job.org) POSTs a repository_dispatch event "build-feeds" at a fixed
+  # time. GitHub's own cron queue starts scheduled runs hours late (observed 2026-09/10: 10:53-15:11 UTC for a
+  # 06:00 UTC cron), so the cron below is only a fallback, deliberately off the hour (top-of-hour slots are the
+  # most congested).
+  repository_dispatch:
+    types: [build-feeds]
   schedule:
-    - cron: "0 6 * * *"  # 06:00 UTC daily, after cerda-sync's 05:00 UTC run
+    - cron: "47 4 * * *"  # fallback only, 04:47 UTC
   workflow_dispatch: {}  # also runnable manually from the Actions tab
+  # build-idealo-feed.yml starts automatically when this workflow succeeds (workflow_run).
 
 # Shared with build-idealo-feed.yml so the two never commit+push to master at
 # the same time -- without this, a manual dispatch of both (or a slow run
@@ -14,11 +21,11 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -58,7 +65,7 @@ jobs:
 
       - name: Upload feed + report as artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: feed-build-${{ github.run_number }}
           path: |
