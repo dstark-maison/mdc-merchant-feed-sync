@@ -21,23 +21,23 @@ def row(vendor="Boomba Bamboo", **kw):
 
 
 @pytest.mark.parametrize("loc,expected", [
-    ("en", "Colour: Coco white · Material: MAT-en · Thread count: 400 · Pattern: Solid"),
-    ("de", "Farbe: Coco white · Material: MAT-de · Fadenzahl: 400 · Muster: Uni"),
-    ("fr", "Couleur : Coco white · Matière : MAT-fr · Nombre de fils : 400 · Motif : Uni"),
-    ("nl", "Kleur: Coco white · Materiaal: MAT-nl · Draaddichtheid: 400 · Patroon: Effen"),
+    ("en", "Colour: Coco White · Material: MAT-en · Thread count: 400 · Pattern: Solid"),
+    ("de", "Farbe: Coco White · Material: MAT-de · Fadenzahl: 400 · Muster: Uni"),
+    ("fr", "Couleur : Coco White · Matière : MAT-fr · Nombre de fils : 400 · Motif : Uni"),
+    ("nl", "Kleur: Coco White · Materiaal: MAT-nl · Draaddichtheid: 400 · Patroon: Effen"),
 ])
 def test_boomba_spec_line_per_language(loc, expected):
     with patch.dict(build_feed.VENDOR_SPEC_CONFIG, CFG, clear=True):
         new, configured = build_feed.apply_spec_enrichment(row(), loc)
     assert configured
     assert new["description"] == f"Base text.\n{expected}"
-    assert (new["color"], new["material"], new["pattern"]) == ("Coco white", f"MAT-{loc}", CFG["Boomba Bamboo"]["pattern"][loc])
+    assert (new["color"], new["material"], new["pattern"]) == ("Coco White", f"MAT-{loc}", CFG["Boomba Bamboo"]["pattern"][loc])
 
 
 def test_vivaraise_omits_thread_count_and_empty_pattern():
     with patch.dict(build_feed.VENDOR_SPEC_CONFIG, CFG, clear=True):
         new, _ = build_feed.apply_spec_enrichment(row("VIVARAISE"), "en")
-    assert new["description"] == "Base text.\nColour: Coco white · Material: VMAT-en"
+    assert new["description"] == "Base text.\nColour: Coco White · Material: VMAT-en"
 
 
 def test_missing_colour_segment_skipped():
@@ -85,7 +85,7 @@ def test_material_pending_drops_material_and_ignores_fabric_metafield():
     with patch.dict(build_feed.VENDOR_SPEC_CONFIG, PENDING, clear=True):
         new, _ = build_feed.apply_spec_enrichment(r, "en")
     assert new["material"] == ""
-    assert new["description"] == "Base text.\nColour: Coco white · Thread count: 400 · Pattern: Solid"
+    assert new["description"] == "Base text.\nColour: Coco White · Thread count: 400 · Pattern: Solid"
     assert "amboo" not in new["description"].replace("Base", "")
 
 
@@ -113,17 +113,49 @@ def test_pattern_only_for_fitted_sheets(handle, has_pattern):
         assert new["pattern"] == ""
 
 
+def test_colour_title_case():
+    assert build_feed.title_case_colour("Coco white") == "Coco White"
+    assert build_feed.title_case_colour("soft taupe") == "Soft Taupe"
+    assert build_feed.title_case_colour("Coffee Brown") == "Coffee Brown"
+    assert build_feed.title_case_colour("") == ""
+
+
 @pytest.mark.real_spec_config
-def test_shipped_config():
-    c = build_feed.VENDOR_SPEC_CONFIG
-    assert c["VIVARAISE"]["material"] == {"en": "100% Cotton", "de": "100 % Baumwolle", "fr": "100 % coton", "nl": "100% katoen"}
-    assert not any(c["VIVARAISE"]["pattern"].values()) and not c["VIVARAISE"]["thread_count"]
-    assert c["Boomba Bamboo"]["material_pending"] is True and c["Boomba Bamboo"]["thread_count"] == "400"
-    for loc in ("en", "de", "fr", "nl"):  # shipped config must build for every locale without raising
+def test_shipped_config_boomba():
+    c = build_feed.VENDOR_SPEC_CONFIG["Boomba Bamboo"]
+    assert c["material_pending"] is True and c["thread_count"] == "400"
+    for loc in ("en", "de", "fr", "nl"):  # must build for every locale without raising
         new, _ = build_feed.apply_spec_enrichment(row(handle="bamboo-fitted-sheet-x"), loc)
-        assert new["material"] == ""
-        new, _ = build_feed.apply_spec_enrichment(row("VIVARAISE"), loc)
-        assert new["material"] == c["VIVARAISE"]["material"][loc]
+        assert new["material"] == "" and new["color"] == "Coco White"
+
+
+@pytest.mark.real_spec_config
+@pytest.mark.parametrize("loc", ["en", "de", "fr", "nl"])
+def test_vivaraise_offers_unchanged_with_shipped_config(loc):
+    """VIVARAISE: no spec line, no material, no pattern, no colour change -- identical to the pre-feature feed."""
+    c = build_feed.VENDOR_SPEC_CONFIG["VIVARAISE"]
+    assert c["material_pending"] is True and not c["thread_count"]
+    r = build_feed.ProductRow(vendor="VIVARAISE", brand="VIVARAISE", description="Fara cushion.", color="rouge",
+                              option_color="rouge", material="Cover: 100% cotton; filling: polyester")
+    new, configured = build_feed.apply_spec_enrichment(r, loc)
+    assert new is r and not configured
+    assert new == r and "pattern" not in new
+
+
+@pytest.mark.real_spec_config
+def test_vivaraise_pipeline_output_unchanged(tmp_path, monkeypatch):
+    import csv
+    monkeypatch.setattr(build_feed, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(build_feed, "REPORTS_DIR", tmp_path)
+    r = build_feed.ProductRow(
+        handle="cushion-fara-x", id="V1", title="Kissen Fara", description="Eine Fara-Decke.", link="https://x/p",
+        image_link="https://x/i.jpg", price_amount="10.00", price="10.00 EUR", availability="in_stock",
+        vendor="VIVARAISE", brand="VIVARAISE", condition="new", gtin="", mpn="V1", item_group_id="cushion-fara-x",
+        color="", option_color="", size="", material="Polyester", shipping_label="std_15", gender="", age_group="")
+    build_feed.run_pipeline([r], "t", "test", market="de")
+    out = list(csv.DictReader(open(tmp_path / "t.csv", newline="", encoding="utf-8")))[0]
+    assert out["description"] == "Eine Fara-Decke."
+    assert out["material"] == "Polyester" and out["color"] == "" and out["pattern"] == ""
 
 
 def test_product_line_never_reaches_the_feed():

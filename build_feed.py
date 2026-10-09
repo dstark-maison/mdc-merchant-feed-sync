@@ -383,6 +383,7 @@ STATUTORY_GUARANTEE_YEARS = 2
 #   thread_count  a string, or None to omit the segment for that vendor.
 #   pattern       {locale: text}; a missing/empty locale just omits the segment.
 #                 Optional pattern_handle_prefixes restricts it to matching product handles.
+# enabled: False  lists the vendor but leaves its offers completely untouched.
 # Colour is not configured: it is the variant's own Color option (brand colour
 # names kept verbatim), else the product's color-pattern metafield label.
 # ---------------------------------------------------------------------------
@@ -399,9 +400,15 @@ VENDOR_SPEC_CONFIG = {
         "pattern_handle_prefixes": ("bamboo-fitted-sheet",),
     },
     "VIVARAISE": {
-        "material": {"en": "100% Cotton", "de": "100 % Baumwolle", "fr": "100 % coton", "nl": "100% katoen"},
-        "thread_count": None,  # omitted for VIVARAISE
-        "pattern": {"en": "", "de": "", "fr": "", "nl": ""},  # empty = segment and attribute dropped
+        # Decided 2026-10-09: the fabric data is mixed (cotton, polyester, linen, hemp, wool, ...), so no single
+        # material claim is true for the vendor. material_pending, and enabled False = offers pass through
+        # byte-identical to the pre-feature feed: no spec line, no colour/material/pattern change. (material_pending
+        # alone would still blank the material attribute and add a colour-only spec line.)
+        "enabled": False,
+        "material_pending": True,
+        "material": {"en": "", "de": "", "fr": "", "nl": ""},
+        "thread_count": None,
+        "pattern": {"en": "", "de": "", "fr": "", "nl": ""},
     },
 }
 
@@ -417,6 +424,12 @@ MAX_DESCRIPTION_LEN = 5000  # Google Merchant Center description limit
 
 class SpecConfigError(ValueError):
     """VENDOR_SPEC_CONFIG is incomplete for a vendor that has offers in the feed."""
+
+
+def title_case_colour(value):
+    """Brand colour names are Title Case in the product titles ("Coco White", "Soft Taupe") while some variant
+    options are not ("Coco white"): capitalise each word's first letter, leave the rest as is."""
+    return " ".join(w[:1].upper() + w[1:] for w in (value or "").split())
 
 
 def spec_line(locale, colour, material, thread_count, pattern):
@@ -444,7 +457,7 @@ def apply_spec_enrichment(row, locale):
     unchanged. Sets color / material / pattern from the spec values and appends the spec line to the description."""
     vendor = (row.get("vendor") or "").strip()
     cfg = VENDOR_SPEC_CONFIG.get(vendor)
-    if cfg is None:
+    if cfg is None or cfg.get("enabled", True) is False:
         return row, False
     material = ((cfg.get("material") or {}).get(locale) or "").strip()
     if cfg.get("material_pending"):
@@ -452,7 +465,7 @@ def apply_spec_enrichment(row, locale):
     elif not material:
         raise SpecConfigError(
             f"VENDOR_SPEC_CONFIG['{vendor}']['material']['{locale}'] is empty -- fill it in build_feed.py before building")
-    colour = (row.get("option_color") or row.get("color") or "").strip()
+    colour = title_case_colour((row.get("option_color") or row.get("color") or "").strip())
     thread_count = (cfg.get("thread_count") or "").strip()
     pattern = ((cfg.get("pattern") or {}).get(locale) or "").strip()
     prefixes = cfg.get("pattern_handle_prefixes")
