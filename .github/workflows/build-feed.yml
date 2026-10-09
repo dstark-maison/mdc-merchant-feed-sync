@@ -9,7 +9,12 @@ on:
     types: [build-feeds]
   schedule:
     - cron: "47 4 * * *"  # fallback only, 04:47 UTC
-  workflow_dispatch: {}  # also runnable manually from the Actions tab
+  workflow_dispatch:  # also runnable manually from the Actions tab
+    inputs:
+      dry_run:
+        description: "Dry run: build all four markets and upload the output as a workflow artifact only. NO commit, NO push."
+        type: boolean
+        default: false
   # build-idealo-feed.yml starts automatically when this workflow succeeds (workflow_run).
 
 # Shared with build-idealo-feed.yml so the two never commit+push to master at
@@ -17,7 +22,9 @@ on:
 # overlapping the next day's schedule) can have one workflow's push rejected
 # because the other landed first, even though its own feed build succeeded.
 concurrency:
-  group: merchant-feed-sync-repo-push
+  # A dry run gets a unique group (it never pushes, so it needs no serialisation) so it can neither queue behind
+  # nor replace a pending live build. Non-dry runs keep the exact shared group name.
+  group: merchant-feed-sync-repo-push${{ inputs.dry_run && format('-dry-run-{0}', github.run_id) || '' }}
 
 jobs:
   build:
@@ -67,13 +74,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: feed-build-${{ github.run_number }}
+          name: ${{ inputs.dry_run && format('feed-dry-run-{0}', github.run_number) || format('feed-build-{0}', github.run_number) }}
           path: |
             data/
             reports/
 
       - name: Commit feed, exclusions log, and report back to repo
-        if: always()
+        # Skipped on a dry run. `inputs` is empty for dispatch/schedule events, so this stays true for them.
+        if: always() && inputs.dry_run != true
         run: |
           git config user.name "merchant-feed-sync-bot"
           git config user.email "actions@users.noreply.github.com"
