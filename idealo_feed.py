@@ -59,12 +59,14 @@ Output: data/idealo_feed.csv, plus its own exclusions log
 import argparse
 import csv
 import os
+import re
 import sys
 from datetime import date
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
+import yaml
 
 import build_feed
 from build_feed import (
@@ -96,22 +98,39 @@ IDEALO_COLUMNS = [
     "paymentCosts_paypal", "paymentCosts_credit_card", "delivery", "imageUrls",
 ]
 
-# Matches this shop's GMC shipping policy: 1-2 day handling + 3-5 day
-# transit, expressed to idealo as a single delivery-time string. Must be
-# German -- idealo shows it verbatim on idealo.de and flagged the English
-# "4-7 working days" in Technical Account Management review.
-DELIVERY_TEXT = "4-7 Werktage"
+# Delivery-time text: ONE place, delivery_times.yaml (default + exact vendor
+# name -> text, same convention as IDEALO_SHIPPING_RATES_DE below). The default
+# matches this shop's GMC shipping policy (1-2 day handling + 3-5 day transit,
+# "4-7 Werktage"). Must be German -- idealo shows it verbatim on idealo.de and
+# flagged the English "4-7 working days" in Technical Account Management review.
+# VIVARAISE is 5-10 working days (3-6 handling + 2-4 transit, as in the
+# custom.delivery_time metafield of its products); SalesFever ships from the
+# supplier (9-16).
+DELIVERY_CONFIG_FILE = ROOT / "delivery_times.yaml"
+_GERMAN_DELIVERY_RE = re.compile(r"^\d+-\d+ Werktage$")
 
-# Vendors whose delivery time differs from DELIVERY_TEXT, keyed by the exact
-# Shopify vendor name (same convention as IDEALO_SHIPPING_RATES_DE below).
-# SalesFever ships from the supplier: 6-11 working days handling + 3-5
-# transit = 9-16 working days, matching the PDP and Shopify's delivery window.
-VENDOR_DELIVERY_TEXT = {
-    "SalesFever": "9-16 Werktage",
-    # VIVARAISE: 3-6 working days handling + 3-5 transit = 6-11 working days
-    # (the custom.delivery_time metafield on its products).
-    "VIVARAISE": "6-11 Werktage",
-}
+
+def load_delivery_config(path=DELIVERY_CONFIG_FILE):
+    """Parses and validates delivery_times.yaml -> (default text, {vendor: text}).
+    Every text must look like "5-10 Werktage" (German, idealo shows it verbatim);
+    a missing default, a non-German text or an empty vendor name is a hard error
+    so a typo can never reach the feed."""
+    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    default = raw.get("default")
+    vendors = raw.get("vendors") or {}
+    if not isinstance(default, str) or not _GERMAN_DELIVERY_RE.match(default):
+        raise ValueError(f"{path}: `default` must be a German delivery text like '4-7 Werktage', got {default!r}")
+    if not isinstance(vendors, dict):
+        raise ValueError(f"{path}: `vendors` must be a mapping vendor -> text")
+    for vendor, text in vendors.items():
+        if not isinstance(vendor, str) or not vendor.strip():
+            raise ValueError(f"{path}: empty vendor name in `vendors`")
+        if not isinstance(text, str) or not _GERMAN_DELIVERY_RE.match(text):
+            raise ValueError(f"{path}: vendor {vendor!r} must have a German delivery text like '5-10 Werktage', got {text!r}")
+    return default, dict(vendors)
+
+
+DELIVERY_TEXT, VENDOR_DELIVERY_TEXT = load_delivery_config()
 
 # Shopify product Type (English, as set in Shopify) -> German idealo
 # categoryPath, levels separated by " > ". Explicit table, no machine
@@ -204,7 +223,8 @@ def shipping_cost_for_row(row, product_type=""):
 
 def delivery_text_for_row(row):
     """`delivery` for one offer: the vendor's own text if it is listed in
-    VENDOR_DELIVERY_TEXT (exact vendor name), else DELIVERY_TEXT."""
+    VENDOR_DELIVERY_TEXT (exact vendor name), else DELIVERY_TEXT (both loaded
+    from delivery_times.yaml)."""
     vendor = _vendor_of(row)
     return VENDOR_DELIVERY_TEXT.get(vendor, DELIVERY_TEXT)
 

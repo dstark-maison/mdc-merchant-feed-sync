@@ -1,0 +1,16 @@
+# idealo `delivery` column -- THE place that decides the German delivery-time text per vendor
+# (idealo_feed.py reads it; nothing else in the repo hard-codes a delivery text).
+# German only: idealo shows the string verbatim on idealo.de.
+#
+# default   every vendor not listed below. Matches the shop's GMC shipping policy: 1-2 day handling + 3-5 day transit.
+# vendors   exact Shopify vendor name (no case folding, no prefix matching) -> text.
+#
+# VIVARAISE: 3-6 working days handling + 2-4 transit = 5-10 working days. Keep in sync with the custom.delivery_time metafield
+# of its products (mdc-ops onboard/structure_rules.json, "delivery_time": "5-10 working days"). Was 6-11 until 2026-10-21.
+# SalesFever ships from the supplier: 6-11 working days handling + 3-5 transit = 9-16 working days.
+
+default: "4-7 Werktage"
+
+vendors:
+  SalesFever: "9-16 Werktage"
+  VIVARAISE: "5-10 Werktage"

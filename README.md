@@ -280,13 +280,14 @@ They are written to `idealo_feed_exclusions.csv` (category `out_of_stock`) and
 listed in the report under "Skipped: out of stock"; they come back on the next
 build once Shopify shows stock again.
 
-**Delivery-time overrides** (`VENDOR_DELIVERY_TEXT` in `idealo_feed.py`):
+**Delivery-time overrides** (`delivery_times.yaml`, the single place; loaded and
+validated by `idealo_feed.load_delivery_config`, German `N-M Werktage` only):
 keyed on the exact vendor name like the shipping overrides above.
 
 | Vendor | `delivery` |
 |---|---|
 | SalesFever | `9-16 Werktage` |
-| VIVARAISE | `6-11 Werktage` (3-6 working days handling + 3-5 transit) |
+| VIVARAISE | `5-10 Werktage` (3-6 working days handling + 2-4 transit; was 6-11 until 2026-10-21) |
 | everyone else | `4-7 Werktage` |
 
 Run locally the same way as `build_feed.py`:

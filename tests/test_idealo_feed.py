@@ -12,6 +12,7 @@ them correctly.
 Run with: pytest tests/ -v
 """
 import csv
+import re
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -363,7 +364,7 @@ def test_vivaraise_cushion_end_to_end(tmp_path):
     stats, written, report = _run(tmp_path, [row], {"cushion": "Decorative Cushions"}, name="unit_test_idealo_vivaraise")
     assert len(written) == 1
     assert written[0]["categoryPath"] == "Heimtextilien > Dekokissen"
-    assert written[0]["delivery"] == "6-11 Werktage"
+    assert written[0]["delivery"] == "5-10 Werktage"
     assert written[0]["deliveryCosts_dpd"] == "15.00"
     assert stats["unmapped_types"] == {}
 
@@ -471,9 +472,43 @@ def test_salesfever_delivery_text():
 
 
 def test_vivaraise_delivery_text():
-    # 3-6 working days handling + 3-5 transit = 6-11 working days
+    # 3-6 working days handling + 2-4 transit = 5-10 working days (was 6-11 until 2026-10-21)
     row = build_feed.ProductRow(brand="VIVARAISE")
-    assert idealo_feed.delivery_text_for_row(row) == "6-11 Werktage"
+    assert idealo_feed.delivery_text_for_row(row) == "5-10 Werktage"
+    assert "6-11" not in idealo_feed.VENDOR_DELIVERY_TEXT["VIVARAISE"]
+
+
+def test_delivery_texts_come_from_delivery_times_yaml():
+    # one config value: the module constants ARE the yaml content, nothing is hard-coded in idealo_feed.py
+    import yaml
+    raw = yaml.safe_load((idealo_feed.ROOT / "delivery_times.yaml").read_text(encoding="utf-8"))
+    assert idealo_feed.DELIVERY_TEXT == raw["default"]
+    assert idealo_feed.VENDOR_DELIVERY_TEXT == raw["vendors"]
+    assert raw["vendors"]["VIVARAISE"] == "5-10 Werktage"
+    code = [l for l in (idealo_feed.ROOT / "idealo_feed.py").read_text(encoding="utf-8").splitlines() if not l.lstrip().startswith("#")]
+    assert not any(re.search(r"=\s*\"\d+-\d+ Werktage\"", l) or re.search(r"\"[A-Za-z]+\":\s*\"\d+-\d+ Werktage\"", l) for l in code)  # no delivery literal assigned in code
+
+
+def test_delivery_config_is_validated(tmp_path):
+    ok = tmp_path / "ok.yaml"
+    ok.write_text('default: "4-7 Werktage"\nvendors:\n  VIVARAISE: "7-8 Werktage"\n', encoding="utf-8")
+    assert idealo_feed.load_delivery_config(ok) == ("4-7 Werktage", {"VIVARAISE": "7-8 Werktage"})
+    for bad in (
+        'vendors: {}\n',                                              # no default
+        'default: "4-7 working days"\n',                              # English
+        'default: "4-7 Werktage"\nvendors:\n  VIVARAISE: "bald"\n',   # not a range
+        'default: "4-7 Werktage"\nvendors:\n  " ": "5-10 Werktage"\n',  # empty vendor name
+    ):
+        p = tmp_path / "bad.yaml"
+        p.write_text(bad, encoding="utf-8")
+        with pytest.raises(ValueError):
+            idealo_feed.load_delivery_config(p)
+
+
+def test_changing_the_config_value_changes_the_feed_text(monkeypatch):
+    monkeypatch.setitem(idealo_feed.VENDOR_DELIVERY_TEXT, "VIVARAISE", "7-8 Werktage")
+    row = build_feed.ProductRow(brand="VIVARAISE")
+    assert idealo_feed.delivery_text_for_row(row) == "7-8 Werktage"
 
 
 @pytest.mark.parametrize("brand", ["Coco & Cici", "Ángel Cerdá S.L.", "salesfever", "SalesFever GmbH", "", None])
