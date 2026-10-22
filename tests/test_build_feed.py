@@ -1113,6 +1113,7 @@ def test_netherlands_is_served_by_the_be_nl_and_en_feeds():
 
 def test_usable_gtin_omits_placeholder_empty_and_invalid_keeps_real():
     assert build_feed.usable_gtin("3210800000000") == ""      # VIVARAISE "awaiting EAN" placeholder
+    assert build_feed.usable_gtin("3210810000000") == ""      # the second VIVARAISE placeholder (Tender Siena, Fara Corinthe)
     assert build_feed.usable_gtin("") == ""
     assert build_feed.usable_gtin(None) == ""
     assert build_feed.usable_gtin("3210804351049") == "3210804351049"
@@ -1122,6 +1123,13 @@ def test_usable_gtin_omits_placeholder_empty_and_invalid_keeps_real():
 def test_usable_gtin_placeholder_stays_out_even_if_it_validated(monkeypatch):
     monkeypatch.setattr(build_feed, "gtin_checksum_valid", lambda g: True)
     assert build_feed.usable_gtin("3210800000000") == ""
+    assert build_feed.usable_gtin("3210810000000") == ""
+
+
+def test_both_vivaraise_placeholder_barcodes_are_listed_not_just_checksum_failures():
+    assert {"3210800000000", "3210810000000"} <= build_feed.PLACEHOLDER_BARCODES
+    # today they also fail the GS1 checksum; the list is what keeps them out if that ever changes
+    assert not build_feed.gtin_checksum_valid("3210810000000")
 
 
 def test_shipping_labels_for_onboarded_vendors():

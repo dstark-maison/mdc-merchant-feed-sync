@@ -585,10 +585,10 @@ def gtin_checksum_valid(gtin):
     return (10 - (total % 10)) % 10 == check
 
 
-# Barcodes used as "no EAN yet" placeholders by suppliers (VIVARAISE: 3210800000000). They are never real GTINs:
-# the feed omits gtin for them and relies on brand + mpn (= SKU). Today this value also fails the GS1 checksum, but
-# that is a coincidence -- list placeholders here so they stay out even if one ever validates.
-PLACEHOLDER_BARCODES = {"3210800000000"}
+# Barcodes used as "no EAN yet" placeholders by suppliers (VIVARAISE: 3210800000000 and 3210810000000). They are never
+# real GTINs: the feed omits gtin for them and relies on brand + mpn (= SKU). Today both values also fail the GS1
+# checksum, but that is a coincidence -- list placeholders here so they stay out even if one ever validates.
+PLACEHOLDER_BARCODES = {"3210800000000", "3210810000000"}
 
 
 def usable_gtin(barcode):
