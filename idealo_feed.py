@@ -147,8 +147,8 @@ CATEGORY_PATHS_DE = {
     "Flat Sheets": "Heimtextilien > Bettwäsche > Betttücher",
     # Decken & Überwürfe
     "Duvets": "Heimtextilien > Bettdecken",
-    # VIVARAISE quilts / eiderdowns (Type "Quilts", Shopify category Quilts & Comforters, the same taxonomy node as Duvets): same idealo category.
-    "Quilts": "Heimtextilien > Bettdecken",
+    # VIVARAISE quilts (Type "Quilts"; French "edredon" = a decorative bed cover, not a sleeping duvet): same idealo category as Bedspreads.
+    "Quilts": "Heimtextilien > Tagesdecken",
     "Throws": "Heimtextilien > Wohndecken",
     "Bedspreads": "Heimtextilien > Tagesdecken",
     "Decorative Cushions": "Heimtextilien > Dekokissen",

@@ -324,7 +324,7 @@ def test_delivery_text_is_german():
     ("Bedding Sets", "Heimtextilien > Bettwäsche > Bettwäsche-Sets"),
     ("Throws", "Heimtextilien > Wohndecken"),
     ("Duvets", "Heimtextilien > Bettdecken"),
-    ("Quilts", "Heimtextilien > Bettdecken"),
+    ("Quilts", "Heimtextilien > Tagesdecken"),
     ("Bedspreads", "Heimtextilien > Tagesdecken"),
     ("Decorative Cushions", "Heimtextilien > Dekokissen"),
     ("Bed Runners", "Heimtextilien > Bettläufer"),
@@ -340,10 +340,12 @@ def test_live_catalog_types_all_have_german_paths(ptype, expected):
     assert idealo_feed.german_category_path(ptype) == expected
 
 
-def test_quilts_share_the_duvet_category_and_are_not_reported_as_unmapped():
-    # VIVARAISE Type "Quilts" (Noam, Astrid, Uni ... quilts): was unmapped_types={'Quilts': 1} in the 2026-10-22 build
-    assert idealo_feed.german_category_path("Quilts") == idealo_feed.german_category_path("Duvets") != ""
-    assert idealo_feed.german_category_path("  Quilts ") == "Heimtextilien > Bettdecken"
+def test_quilts_are_tagesdecken_not_bettdecken_and_not_reported_as_unmapped():
+    # VIVARAISE Type "Quilts" (Noam, Astrid, Uni ... quilts): was unmapped_types={'Quilts': 1} in the 2026-10-22 build.
+    # French "edredon" = a decorative cover for the bed, so it goes with the bedspreads, NOT with the sleeping duvets.
+    assert idealo_feed.german_category_path("Quilts") == idealo_feed.german_category_path("Bedspreads") == "Heimtextilien > Tagesdecken"
+    assert idealo_feed.german_category_path("Quilts") != idealo_feed.german_category_path("Duvets")
+    assert idealo_feed.german_category_path("  Quilts ") == "Heimtextilien > Tagesdecken"
 
 
 def test_unmapped_type_is_blank_never_english():
