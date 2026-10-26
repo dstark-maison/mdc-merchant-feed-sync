@@ -9,6 +9,11 @@ on:
     types: [build-feeds]
   schedule:
     - cron: "47 4 * * *"  # fallback only, 04:47 UTC
+    # Black Week 2026 (black_week.py): the idealo price flips at 23 Nov 00:00 and 30 Nov 23:59 Europe/Berlin, so the feeds
+    # are also rebuilt just after both boundaries (23:05 UTC = 00:05 CET). Harmless in other years (outside the window
+    # the feeds are unchanged). GitHub's cron can start late -- also add cron-job.org triggers for these two moments.
+    - cron: "5 23 22 11 *"
+    - cron: "5 23 30 11 *"
   workflow_dispatch:  # also runnable manually from the Actions tab
     inputs:
       dry_run:
