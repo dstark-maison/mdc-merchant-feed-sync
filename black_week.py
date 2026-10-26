@@ -17,6 +17,12 @@ custom-black-week-pct.liquid). Keep the three in sync:
   -5 %:  vendor Coco & Cici, unless the product is "Ocean Blue"
 Boomba Bamboo (and everything else) is never discounted.
 
+Christmas 2026 is a second window in the same module: 2026-12-01 00:00 to 2026-12-25 23:59 Europe/Berlin, 5 % for every
+product that is in Black Week 10 OR Black Week 5 (same product selection, one flat percentage; Ocean Blue and Boomba
+Bamboo still excluded). A GMC row carries the sale of the first window that is not over yet, so between the two windows
+it already announces the Christmas sale. Keep in sync with the "Weihnachten -5%" automatic discount and the theme
+(custom-black-week-pct.liquid, active_campaign "christmas").
+
 Ocean Blue is detected on the title (EN) OR the base handle: in the translated market feeds the title is
 localized (DE "Ozeanblau"), the base handle is not.
 
@@ -30,6 +36,8 @@ from zoneinfo import ZoneInfo
 BERLIN = ZoneInfo("Europe/Berlin")
 WINDOW_START = datetime(2026, 11, 23, 0, 0, tzinfo=BERLIN)
 WINDOW_END = datetime(2026, 11, 30, 23, 59, tzinfo=BERLIN)
+CHRISTMAS_START = datetime(2026, 12, 1, 0, 0, tzinfo=BERLIN)
+CHRISTMAS_END = datetime(2026, 12, 25, 23, 59, tzinfo=BERLIN)
 
 PCT_BY_VENDOR = {
     "VIVARAISE": 10,
@@ -37,6 +45,7 @@ PCT_BY_VENDOR = {
     "SalesFever": 10,
     "Coco & Cici": 5,
 }
+CHRISTMAS_PCT = 5
 
 
 def _now(now):
@@ -63,6 +72,21 @@ def discount_pct(vendor, title="", handle=""):
     return pct
 
 
+def christmas_pct(vendor, title="", handle=""):
+    """5 or 0: every product that has a Black Week discount (10 or 5) gets the flat Christmas 5 %."""
+    return CHRISTMAS_PCT if discount_pct(vendor, title, handle) else 0
+
+
+def christmas_in_window(now=None):
+    """True from 1 Dec 00:00 up to and including 25 Dec 23:59 Berlin time."""
+    n = _now(now)
+    return CHRISTMAS_START <= n <= CHRISTMAS_END.replace(second=59)
+
+
+def christmas_window_not_over(now=None):
+    return _now(now) <= CHRISTMAS_END.replace(second=59)
+
+
 def discounted_amount(price_amount, pct):
     """'29.95', 10 -> '26.96' (discount truncated to the cent, like Shopify). '' for an unusable price."""
     try:
@@ -79,27 +103,52 @@ def row_pct(row):
     return discount_pct(row.get("vendor") or row.get("brand"), row.get("title", ""), row.get("handle", ""))
 
 
-def effective_date_range():
-    """Google's ISO 8601 interval, e.g. 2026-11-23T00:00+0100/2026-11-30T23:59+0100."""
+def row_christmas_pct(row):
+    return christmas_pct(row.get("vendor") or row.get("brand"), row.get("title", ""), row.get("handle", ""))
+
+
+def _range(start, end):
     fmt = "%Y-%m-%dT%H:%M%z"
-    return f"{WINDOW_START.strftime(fmt)}/{WINDOW_END.strftime(fmt)}"
+    return f"{start.strftime(fmt)}/{end.strftime(fmt)}"
+
+
+def effective_date_range():
+    """Google's ISO 8601 interval of the Black Week window, e.g. 2026-11-23T00:00+0100/2026-11-30T23:59+0100."""
+    return _range(WINDOW_START, WINDOW_END)
+
+
+def christmas_effective_date_range():
+    """Same for the Christmas window: 2026-12-01T00:00+0100/2026-12-25T23:59+0100."""
+    return _range(CHRISTMAS_START, CHRISTMAS_END)
 
 
 def gmc_sale_fields(row, now=None):
-    """-> (sale_price, sale_price_effective_date); both '' when the row is not discounted or the window is over."""
-    pct = row_pct(row)
-    if not pct or not window_not_over(now):
+    """-> (sale_price, sale_price_effective_date); both '' when the row is not discounted or both windows are over.
+
+    Google takes one sale per row: the first window that is not over yet (Black Week, then Christmas)."""
+    if window_not_over(now):
+        pct, effective = row_pct(row), effective_date_range()
+    elif christmas_window_not_over(now):
+        pct, effective = row_christmas_pct(row), christmas_effective_date_range()
+    else:
+        return "", ""
+    if not pct:
         return "", ""
     amount = discounted_amount(row.get("price_amount", ""), pct)
     if not amount:
         return "", ""
-    return f"{amount} EUR", effective_date_range()
+    return f"{amount} EUR", effective
 
 
 def idealo_price(row, now=None):
-    """The idealo `price`: discounted inside the window for matching rows, else the regular price_amount."""
+    """The idealo `price`: discounted inside either window for matching rows, else the regular price_amount."""
     regular = row.get("price_amount", "")
-    pct = row_pct(row)
-    if pct and in_window(now):
+    if in_window(now):
+        pct = row_pct(row)
+    elif christmas_in_window(now):
+        pct = row_christmas_pct(row)
+    else:
+        pct = 0
+    if pct:
         return discounted_amount(regular, pct) or regular
     return regular

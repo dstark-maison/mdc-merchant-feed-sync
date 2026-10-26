@@ -14,6 +14,8 @@ on:
     # the feeds are unchanged). GitHub's cron can start late -- also add cron-job.org triggers for these two moments.
     - cron: "5 23 22 11 *"
     - cron: "5 23 30 11 *"
+    # Christmas 2026 window (1-25 Dec): 30 Nov 23:05 UTC above is already 00:05 on 1 Dec; the window ends 25 Dec 23:59.
+    - cron: "5 23 25 12 *"
   workflow_dispatch:  # also runnable manually from the Actions tab
     inputs:
       dry_run:
