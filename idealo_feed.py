@@ -68,6 +68,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import requests
 import yaml
 
+import black_week
 import build_feed
 from build_feed import (
     MARKETS,
@@ -362,7 +363,7 @@ def load_category_paths_from_csv(path):
 # report. Mirrors build_feed.run_pipeline's shape but is its own function --
 # no shared output path, no shared report.
 # ---------------------------------------------------------------------------
-def run_idealo_pipeline(rows, product_types, out_basename, run_label, variant_ids=None):
+def run_idealo_pipeline(rows, product_types, out_basename, run_label, variant_ids=None, now=None):
     """product_types: {handle: English Shopify Type}; translated to German
     via CATEGORY_PATHS_DE at write time. variant_ids: {(handle, sku):
     numeric variant id}; None/{} means no variant deep links are available
@@ -432,7 +433,7 @@ def run_idealo_pipeline(rows, product_types, out_basename, run_label, variant_id
                 "url": variant_url(row.get("link", ""), vid),
                 "eans": row.get("gtin", ""),
                 "description": row.get("description", ""),
-                "price": row.get("price_amount", ""),
+                "price": black_week.idealo_price(row, now),
                 "categoryPath": category_path,
                 "size": row.get("size", ""),
                 "colour": row.get("color", ""),

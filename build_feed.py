@@ -56,6 +56,8 @@ from urllib.parse import quote
 import requests
 import yaml
 
+import black_week
+
 ROOT = Path(__file__).parent
 DATA_DIR = ROOT / "data"
 REPORTS_DIR = ROOT / "reports"
@@ -1090,10 +1092,11 @@ FEED_COLUMNS = [
     "id", "title", "description", "link", "image_link", "additional_image_link",
     "availability", "price", "brand", "condition", "gtin", "mpn", "item_group_id",
     "color", "size", "material", "pattern", "shipping_label", "gender", "age_group",
+    "sale_price", "sale_price_effective_date",  # Black Week 2026, see black_week.py (empty outside the campaign)
 ]
 
 
-def run_pipeline(rows, out_basename, run_label, market="de"):
+def run_pipeline(rows, out_basename, run_label, market="de", now=None):
     locale = MARKETS[market]["locale"]
     spec_enriched = 0
     accepted, excluded, sample_rejected, empty_description, missing_translation = [], [], [], [], []
@@ -1144,6 +1147,10 @@ def run_pipeline(rows, out_basename, run_label, market="de"):
             continue
 
         accepted.append(row)
+
+    # Black Week 2026: sale_price + effective date for matching rows (price stays regular). now=None -> current time.
+    for row in accepted:
+        row["sale_price"], row["sale_price_effective_date"] = black_week.gmc_sale_fields(row, now)
 
     feed_csv_path = DATA_DIR / f"{out_basename}.csv"
     feed_txt_path = DATA_DIR / f"{out_basename}.txt"
