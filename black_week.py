@@ -4,10 +4,11 @@ Black Week 2026 pricing for the feeds (Google Merchant Center + idealo).
 Window: 2026-11-23 00:00 to 2026-11-30 23:59, Europe/Berlin. Date-driven -- no manual switch: every build decides
 from the current time.
 
-  * Google Merchant Center feeds (all four markets): `price` stays the regular price; from now until the window
-    ends, matching rows also carry `sale_price` + `sale_price_effective_date` (Google applies the sale price only
-    inside the window, so the feed can -- and must -- be published BEFORE the window opens). After the window the
-    two columns are empty again.
+  * Google Merchant Center feeds (all four markets): `price` stays the regular price; from PUBLISH_FROM (22 Nov 00:00
+    Berlin) until the window ends, matching rows also carry `sale_price` + `sale_price_effective_date` (Google applies
+    the sale price only inside the window, so the feed must be published BEFORE the window opens -- but not earlier:
+    Merchant Center shows a scheduled sale as a sale). Before PUBLISH_FROM and after the window the two columns are
+    empty.
   * idealo feed: `price` is the discounted price ONLY while the build time is inside the window (idealo has no
     effective-date attribute), so the feed has to be rebuilt right after 23 Nov 00:00 and 30 Nov 23:59 Berlin time.
 
@@ -38,6 +39,9 @@ WINDOW_START = datetime(2026, 11, 23, 0, 0, tzinfo=BERLIN)
 WINDOW_END = datetime(2026, 11, 30, 23, 59, tzinfo=BERLIN)
 CHRISTMAS_START = datetime(2026, 12, 1, 0, 0, tzinfo=BERLIN)
 CHRISTMAS_END = datetime(2026, 12, 25, 23, 59, tzinfo=BERLIN)
+# GMC sale fields stay empty before this moment. Google applies sale_price only inside its effective date, but Merchant
+# Center already shows a scheduled sale as a sale (2026-10-27), so the feed carries it only from the eve of Black Week.
+PUBLISH_FROM = datetime(2026, 11, 22, 0, 0, tzinfo=BERLIN)
 
 PCT_BY_VENDOR = {
     "VIVARAISE": 10,
@@ -123,9 +127,12 @@ def christmas_effective_date_range():
 
 
 def gmc_sale_fields(row, now=None):
-    """-> (sale_price, sale_price_effective_date); both '' when the row is not discounted or both windows are over.
+    """-> (sale_price, sale_price_effective_date); both '' before PUBLISH_FROM, when the row is not discounted, or
+    when both windows are over.
 
     Google takes one sale per row: the first window that is not over yet (Black Week, then Christmas)."""
+    if _now(now) < PUBLISH_FROM:
+        return "", ""
     if window_not_over(now):
         pct, effective = row_pct(row), effective_date_range()
     elif christmas_window_not_over(now):

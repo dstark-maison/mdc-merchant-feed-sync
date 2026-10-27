@@ -1,7 +1,7 @@
 """Tests for black_week.py: rules, Shopify-identical rounding, Berlin-time window, GMC sale fields, idealo price."""
 import csv
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -81,9 +81,28 @@ def _row(vendor="VIVARAISE", price="29.95", title="Cushion", handle="cushion"):
                                  price=f"{price} EUR")
 
 
-def test_gmc_sale_fields_before_and_inside_window():
-    for now in (berlin(2026, 10, 27, 6, 0), berlin(2026, 11, 22, 6, 0), berlin(2026, 11, 25, 12, 0)):
+def test_gmc_sale_fields_published_from_the_eve_and_inside_window():
+    for now in (berlin(2026, 11, 22, 0, 0), berlin(2026, 11, 22, 6, 0), berlin(2026, 11, 25, 12, 0)):
         assert black_week.gmc_sale_fields(_row(), now) == ("26.96 EUR", EFFECTIVE)
+
+
+def test_gmc_sale_fields_empty_before_publish_from():
+    for now in (berlin(2026, 10, 27, 6, 0), berlin(2026, 11, 21, 23, 59), berlin(2026, 11, 21, 23, 59, 59)):
+        assert black_week.gmc_sale_fields(_row(), now) == ("", "")
+    assert black_week.gmc_sale_fields(_row(), berlin(2026, 11, 22, 0, 0)) == ("26.96 EUR", EFFECTIVE)
+
+
+def test_publish_from_boundary_is_timezone_and_dst_safe():
+    # 22 Nov is CET (UTC+1): 00:00 Berlin = 21 Nov 23:00 UTC. The clocks went back on 25 Oct (CEST -> CET).
+    assert black_week.PUBLISH_FROM.utcoffset().total_seconds() == 3600
+    assert black_week.gmc_sale_fields(_row(), datetime(2026, 11, 21, 22, 59, 59, tzinfo=timezone.utc)) == ("", "")
+    assert black_week.gmc_sale_fields(_row(), datetime(2026, 11, 21, 23, 0, tzinfo=timezone.utc)) == ("26.96 EUR", EFFECTIVE)
+    # a UTC+2 (summer time) clock reading of 22 Nov 00:30 is 21 Nov 22:30 UTC = still before the boundary
+    plus2 = timezone(timedelta(hours=2))
+    assert black_week.gmc_sale_fields(_row(), datetime(2026, 11, 22, 0, 30, tzinfo=plus2)) == ("", "")
+    # the last CEST day (24 Oct, UTC+2) and the first CET day (25 Oct 03:00) are both before the boundary
+    assert black_week.gmc_sale_fields(_row(), berlin(2026, 10, 24, 23, 59)) == ("", "")
+    assert black_week.gmc_sale_fields(_row(), berlin(2026, 10, 25, 3, 30)) == ("", "")
 
 
 def test_gmc_sale_fields_empty_after_window_and_for_other_rows():
@@ -134,6 +153,14 @@ def test_gmc_pipeline_writes_sale_columns_inside_window(tmp_path, monkeypatch):
     assert vv and all(r["sale_price"] == "26.96 EUR" and r["price"] == "29.95 EUR" for r in vv)
     assert all(r["sale_price_effective_date"] == EFFECTIVE for r in vv)
     assert other and all(r["sale_price"] == "" and r["sale_price_effective_date"] == "" for r in other)
+
+
+def test_gmc_pipeline_sale_columns_empty_before_publish_from(tmp_path, monkeypatch):
+    rows = _run(tmp_path, monkeypatch, "t_pre", berlin(2026, 11, 21, 23, 59))
+    assert rows and all(r["sale_price"] == "" and r["sale_price_effective_date"] == "" for r in rows)
+    rows = _run(tmp_path, monkeypatch, "t_eve", berlin(2026, 11, 22, 0, 0))
+    vv = [r for r in rows if r["id"].endswith("-VV")]
+    assert vv and all(r["sale_price"] == "26.96 EUR" for r in vv)
 
 
 def test_gmc_pipeline_sale_columns_empty_after_window(tmp_path, monkeypatch):
