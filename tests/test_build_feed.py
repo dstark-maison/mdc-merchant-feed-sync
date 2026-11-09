@@ -1220,3 +1220,29 @@ def test_run_pipeline_logs_manual_exclusions_and_keeps_the_legit_sibling(tmp_pat
         assert "8720849140447-copy" in log and "manual exclusion rule" in log
     finally:
         build_feed.DATA_DIR, build_feed.REPORTS_DIR = orig
+
+
+# ---------------------------------------------------------------------------
+# usable_gtin: GTIN-14 with a leading zero -> EAN-13
+# ---------------------------------------------------------------------------
+def test_usable_gtin_normalises_leading_zero_gtin14_to_ean13():
+    assert build_feed.usable_gtin("08720849141598") == "8720849141598"
+
+
+def test_usable_gtin_keeps_ean13_and_strips_whitespace():
+    assert build_feed.usable_gtin(" 8720849141345 ") == "8720849141345"
+
+
+def test_usable_gtin_rejects_invalid_gtin14_instead_of_trimming():
+    assert build_feed.usable_gtin("08720849141599") == ""
+
+
+def test_usable_gtin_keeps_real_gtin14_without_leading_zero():
+    # 14-digit GTIN whose first digit is not 0 is a real packaging-level GTIN: left alone.
+    assert build_feed.usable_gtin("18720849141595") == "18720849141595"
+
+
+def test_usable_gtin_placeholder_and_empty_still_blank():
+    assert build_feed.usable_gtin("3210810000000") == ""
+    assert build_feed.usable_gtin("") == ""
+    assert build_feed.usable_gtin(None) == ""

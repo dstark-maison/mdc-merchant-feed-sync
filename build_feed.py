@@ -594,11 +594,19 @@ PLACEHOLDER_BARCODES = {"3210800000000", "3210810000000"}
 
 
 def usable_gtin(barcode):
-    """Barcode as a feed gtin, or "" when it is empty, a known placeholder, or fails the GS1 checksum."""
+    """Barcode as a feed gtin, or "" when it is empty, a known placeholder, or fails the GS1 checksum.
+
+    A valid 14-digit GTIN with a leading zero (a GTIN-14 wrapper around an EAN-13, e.g. MoST "08720849141598") is the
+    same GTIN as its EAN-13 and is written as the 13-digit EAN: idealo and GMC match offers on the EAN-13 form. The
+    check digit is identical in both forms; an invalid 14-digit barcode is still rejected, never trimmed to fit."""
     barcode = (barcode or "").strip()
     if barcode in PLACEHOLDER_BARCODES:
         return ""
-    return barcode if gtin_checksum_valid(barcode) else ""
+    if not gtin_checksum_valid(barcode):
+        return ""
+    if len(barcode) == 14 and barcode.startswith("0"):
+        return barcode[1:]
+    return barcode
 
 
 def is_known_sample_value(row):

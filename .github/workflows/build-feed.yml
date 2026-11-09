@@ -16,6 +16,13 @@ on:
     - cron: "5 23 30 11 *"
     # Christmas 2026 window (1-25 Dec): 30 Nov 23:05 UTC above is already 00:05 on 1 Dec; the window ends 25 Dec 23:59.
     - cron: "5 23 25 12 *"
+    # Campaign rebuild backstop, 20 Nov - 27 Dec 2026 ONLY: the primary trigger is a cron-job.org dispatch every 2 hours
+    # (even UTC hours, :05, 20 Nov 00:05 UTC to 27 Dec 22:05 UTC). These GitHub crons are the late-starting fallback for it,
+    # offset to :47 so they never coincide with the dispatches. Both lines are inert outside their months/days; DELETE
+    # them (and the cron-job.org job) after 27 Dec 2026 -- from 28 Dec the daily trigger above is all that is left.
+    # Same concurrency group as every other run below, so overlapping builds queue instead of racing on the push.
+    - cron: "47 */2 20-30 11 *"  # 20-30 Nov 2026
+    - cron: "47 */2 1-27 12 *"   # 1-27 Dec 2026
   workflow_dispatch:  # also runnable manually from the Actions tab
     inputs:
       dry_run:

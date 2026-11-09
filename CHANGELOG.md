@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-09 -- campaign rebuild backstop + GTIN-14 normalisation
+
+- `build-feed.yml`: two dated backstop crons (20-30 Nov, 1-27 Dec 2026, every 2 h at :47) behind a cron-job.org
+  2-hourly dispatch; remove after 27 Dec (see BACKLOG.md). Concurrency group unchanged.
+- `usable_gtin()`: a valid 14-digit GTIN with a leading zero is written as its EAN-13 (MoST Ivory Mist
+  `08720849141598` -> `8720849141598`) in both the GMC and idealo feeds; invalid 14-digit barcodes are still rejected.
+
 ## 2026-10-06 -- SalesFever decision made permanent
 
 - SalesFever stays `brand` = "SalesFever" with the title unprefixed, permanently:
