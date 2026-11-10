@@ -308,6 +308,8 @@ def test_pipeline_item_count_unchanged_by_mapping(tmp_path, monkeypatch):
     for i, r in enumerate(rows):
         r.update(id=f"S-{i}", description="d", link="https://www.maisondecocon.com/p", image_link="https://x/1.jpg",
                  price="1.00 EUR", price_amount="1.00", availability="in_stock", mpn=f"S-{i}", gtin="")
+        if r["vendor"] == "RIBECO":  # a RIBECO offer needs a SKU that is in ribeco_shipping.yaml (an unknown one raises on purpose)
+            r.update(id="6192972160", mpn="6192972160")
     stats, out = _run(tmp_path, monkeypatch, rows, "count")
     assert stats["accepted"] == len(rows) - 1 == len(out)  # the empty-vendor row is skipped
     assert stats["excluded"] == 1
@@ -340,3 +342,25 @@ def test_idealo_inputs_are_unaffected_by_the_mapping():
     rows = build_feed.load_products_from_csv(str(Path(__file__).parent / "fixtures" / "sample_products_export.csv"))
     boomba = next(r for r in rows if r["vendor"] == "Boomba Bamboo")
     assert boomba["brand"] == "Boomba Bamboo" and not boomba["title"].startswith("Boomba Bamboo")
+
+
+def _offer(vendor, sku):
+    r = _row(vendor)
+    r.update(id=sku, description="d", link="https://www.maisondecocon.com/p", image_link="https://x/1.jpg",
+             price="1.00 EUR", price_amount="1.00", availability="in_stock", mpn=sku, gtin="")
+    return r
+
+
+def test_ribeco_offer_gets_shipping_columns_and_others_stay_empty(tmp_path, monkeypatch):
+    stats, out = _run(tmp_path, monkeypatch, [_offer("RIBECO", "6192972160"), _offer("Coco & Cici", "X-1")], "ship")
+    header = open(stats["feed_csv_path"], encoding="utf-8").readline().strip().split(",")
+    assert header.count(build_feed.SHIPPING_COLUMN) == 3  # de market: DE, AT, LU
+    ribeco = next(r for r in csv.reader(open(stats["feed_csv_path"], newline="", encoding="utf-8")) if r[0] == "6192972160")
+    assert ribeco[-3:] == ["DE:0.00 EUR:0:1:1:2", "AT:13.61 EUR:0:1:1:2", "LU:13.27 EUR:0:1:1:2"]
+    other = next(r for r in csv.reader(open(stats["feed_csv_path"], newline="", encoding="utf-8")) if r[0] == "X-1")
+    assert other[-3:] == ["", "", ""]
+
+
+def test_feed_without_ribeco_has_no_shipping_columns(tmp_path, monkeypatch):
+    stats, _ = _run(tmp_path, monkeypatch, [_offer("Coco & Cici", "X-1")], "noship")
+    assert build_feed.SHIPPING_COLUMN not in open(stats["feed_csv_path"], encoding="utf-8").readline()
