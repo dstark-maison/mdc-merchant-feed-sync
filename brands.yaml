@@ -37,6 +37,8 @@ white_label:
 # shoppers search for), so the title is NOT prefixed with it.
 passthrough:
   - "SalesFever"
+  - "RIBECO"      # owner decision 2026-11-10: the storefront vendor is RIBECO (SalesFever precedent): brand = vendor, title not prefixed. All 51 GTINs share prefix 4015049;
+                  # whether it is registered to RIBECO is NOT verified yet (Verified by GS1 lookup pending).
 
 # Not live yet -- decide consumer brand vs white-label before they go live:
-#   RIBECO, Robinil
+#   Robinil

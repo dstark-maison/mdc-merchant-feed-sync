@@ -14,3 +14,4 @@ default: "4-7 Werktage"
 vendors:
   SalesFever: "9-16 Werktage"
   VIVARAISE: "5-10 Werktage"
+  RIBECO: "1-3 Werktage"   # 0-1 working days handling + 1-2 transit (mdc-ops structure_rules.json vendors.RIBECO.delivery, owner 2026-11-10)

@@ -191,6 +191,7 @@ IDEALO_SHIPPING_RATES_DE = {
     "sf_bulky": "119.00",
     "sf_small": "19.90",
     "std_15": "15.00",
+    "ribeco": "0.00",  # RIBECO ships free within Germany on every tier (idealo.de only)
 }
 
 PAYMENT_COST = "0.00"
