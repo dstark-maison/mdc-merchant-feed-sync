@@ -79,7 +79,7 @@ def test_empty_vendor_gets_no_brand_and_is_flagged(vendor):
     assert build_feed.brand_for_vendor(vendor) == ("", False, True)
 
 
-@pytest.mark.parametrize("vendor", ["RIBECO", "Robinil", "coco & cici"])
+@pytest.mark.parametrize("vendor", ["Robinil", "Robinil", "coco & cici"])
 def test_unknown_vendor_defaults_and_is_flagged(vendor):
     """Matching is exact: a case variant is unknown, not silently a brand."""
     assert build_feed.brand_for_vendor(vendor) == ("Maison de Cocon", False, True)
@@ -199,7 +199,7 @@ def test_white_label_row_gets_default_brand_and_title_is_untouched(vendor):
 
 
 def test_unknown_vendor_row_is_flagged_default_brand_title_untouched():
-    new, unknown = build_feed.apply_brand_mapping(_row("RIBECO"))
+    new, unknown = build_feed.apply_brand_mapping(_row("Robinil"))
     assert (new["brand"], new["title"], unknown) == ("Maison de Cocon", "Tencel Duvet", True)
 
 
@@ -304,7 +304,7 @@ def test_csv_and_graphql_adapters_agree_in_every_market(mock_post, market, vendo
 
 
 def test_pipeline_item_count_unchanged_by_mapping(tmp_path, monkeypatch):
-    rows = [_row(v) for v in CONSUMER_VENDORS + WHITE_LABEL_VENDORS + PASSTHROUGH_VENDORS + ["RIBECO", ""]]
+    rows = [_row(v) for v in CONSUMER_VENDORS + WHITE_LABEL_VENDORS + PASSTHROUGH_VENDORS + ["Robinil", ""]]
     for i, r in enumerate(rows):
         r.update(id=f"S-{i}", description="d", link="https://www.maisondecocon.com/p", image_link="https://x/1.jpg",
                  price="1.00 EUR", price_amount="1.00", availability="in_stock", mpn=f"S-{i}", gtin="")
@@ -312,16 +312,16 @@ def test_pipeline_item_count_unchanged_by_mapping(tmp_path, monkeypatch):
     assert stats["accepted"] == len(rows) - 1 == len(out)  # the empty-vendor row is skipped
     assert stats["excluded"] == 1
     assert all(r["brand"] for r in out)  # no published row has an empty brand
-    assert stats["unknown_vendors"] == {"RIBECO": 1, "(empty vendor)": 1}
+    assert stats["unknown_vendors"] == {"Robinil": 1, "(empty vendor)": 1}
 
 
 def test_unknown_vendors_are_listed_in_the_report(tmp_path, monkeypatch):
-    rows = [_row("RIBECO")]
+    rows = [_row("Robinil")]
     rows[0].update(id="S-1", description="d", link="https://www.maisondecocon.com/p", image_link="https://x/1.jpg",
                    price="1.00 EUR", price_amount="1.00", availability="in_stock", mpn="S-1", gtin="")
     stats, _ = _run(tmp_path, monkeypatch, rows, "report")
     text = stats["report_path"].read_text(encoding="utf-8")
-    assert "Unknown vendors" in text and "`RIBECO`" in text
+    assert "Unknown vendors" in text and "`Robinil`" in text
 
 
 def test_sample_guard_still_sees_the_raw_vendor_as_brand(tmp_path, monkeypatch):

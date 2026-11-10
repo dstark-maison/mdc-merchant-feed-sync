@@ -139,6 +139,7 @@ VENDOR_SHIPPING_LABELS = {
     "MoST Blankets": "std_990",
     "Coco & Cici": "std_10",
     "VIVARAISE": "std_15",
+    "RIBECO": "ribeco",  # per-offer `shipping` columns from ribeco_shipping.yaml (free in DE, tiered elsewhere); the label itself needs no GMC service
 }
 DEFAULT_SHIPPING_LABEL = "std_default"
 
@@ -162,6 +163,48 @@ def shipping_label_for(vendor, product_type=""):
     if vendor == "SalesFever":
         return "sf_small" if (product_type or "").strip() in SALESFEVER_SMALL_TYPES else "sf_bulky"
     return VENDOR_SHIPPING_LABELS.get(vendor, DEFAULT_SHIPPING_LABEL)
+
+
+# ---------------------------------------------------------------------------
+# RIBECO: shipping differs per variant (Shopify delivery profiles "RIBECO Tier 1-7": free in Germany, a per-tier rate in AT / BE / NL / LU / FR), which no
+# single account-level label service can express. Those offers carry per-offer `shipping` columns instead, built from ribeco_shipping.yaml (generated from the
+# live profiles by mdc-ops onboard/ribeco/feed_shipping_table.py --check). Only the countries of the market being built are listed. Product-level shipping
+# overrides the account-level service in Merchant Center. Rows of every other vendor get nothing, and when no row carries `shipping` the columns are not
+# written at all, so the feed of a build without RIBECO offers is byte-identical to before.
+# ---------------------------------------------------------------------------
+RIBECO_SHIPPING_FILE = Path(__file__).parent / "ribeco_shipping.yaml"
+SHIPPING_COUNTRY_CODES = {"Germany": "DE", "Austria": "AT", "Belgium": "BE", "Luxembourg": "LU", "France": "FR", "Netherlands": "NL"}
+SHIPPING_COLUMN = "shipping(country:price:min_handling_time:max_handling_time:min_transit_time:max_transit_time)"
+
+
+def load_ribeco_shipping(path=None):
+    import yaml
+    with open(path or RIBECO_SHIPPING_FILE, encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+    for key in ("handling_days", "transit_days", "rates", "skus"):
+        if key not in cfg:
+            raise ValueError(f"ribeco_shipping.yaml: '{key}' is required")
+    for sku, tier in cfg["skus"].items():
+        if tier not in cfg["rates"]:
+            raise ValueError(f"ribeco_shipping.yaml: SKU {sku} is in tier {tier}, which has no rates")
+    return cfg
+
+
+def shipping_values_for(vendor, sku, market, cfg=None):
+    """List of `shipping` cell values (one per country of the market) for a RIBECO offer, [] for every other vendor.
+    A RIBECO SKU that is not in the table raises: a wrong or missing shipping price is never guessed."""
+    if (vendor or "").strip() != "RIBECO":
+        return []
+    cfg = cfg or load_ribeco_shipping()
+    tier = cfg["skus"].get(str(sku))
+    if tier is None:
+        raise ValueError(f"RIBECO SKU {sku} has no tier in ribeco_shipping.yaml (run mdc-ops feed_shipping_table.py --write)")
+    h, t = cfg["handling_days"], cfg["transit_days"]
+    out = []
+    for country in MARKETS[market]["countries"]:
+        code = SHIPPING_COUNTRY_CODES[country]
+        out.append(f"{code}:{cfg['rates'][tier][code]} EUR:{h[0]}:{h[1]}:{t[0]}:{t[1]}")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1160,14 +1203,24 @@ def run_pipeline(rows, out_basename, run_label, market="de", now=None):
     for row in accepted:
         row["sale_price"], row["sale_price_effective_date"] = black_week.gmc_sale_fields(row, now)
 
+    # RIBECO per-offer shipping (see ribeco_shipping.yaml). Columns exist only when at least one accepted row carries them.
+    shipping_cfg = load_ribeco_shipping() if any((r.get("vendor") or "").strip() == "RIBECO" for r in accepted) else None
+    n_ship = 0
+    for row in accepted:
+        vals = shipping_values_for(row.get("vendor"), row.get("id"), market, shipping_cfg)
+        for i, v in enumerate(vals):
+            row[f"_shipping{i}"] = v
+        n_ship = max(n_ship, len(vals))
+    columns = FEED_COLUMNS + ([SHIPPING_COLUMN] * n_ship)
+
     feed_csv_path = DATA_DIR / f"{out_basename}.csv"
     feed_txt_path = DATA_DIR / f"{out_basename}.txt"
-    for path, delim in ((feed_csv_path, ","), (feed_txt_path, "\t")):
+    for path, delim in ((feed_csv_path, ","), (feed_txt_path, "	")):
         with open(path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=FEED_COLUMNS, delimiter=delim, extrasaction="ignore")
-            writer.writeheader()
+            writer = csv.writer(f, delimiter=delim)
+            writer.writerow(columns)   # repeated header names are intended: Google reads one `shipping` per column
             for row in accepted:
-                writer.writerow(row)
+                writer.writerow([row.get(c, "") for c in FEED_COLUMNS] + [row.get(f"_shipping{i}", "") for i in range(n_ship)])
 
     exclusions_path = DATA_DIR / f"{out_basename}_exclusions.csv"
     with open(exclusions_path, "w", newline="", encoding="utf-8") as f:

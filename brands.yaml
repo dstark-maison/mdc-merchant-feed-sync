@@ -29,6 +29,8 @@ white_label:
   - "Maison de Cocon"      # our own products: brand only, title never changed
   - "Ángel Cerdá S.L."     # wound down 2026-09, 0 active products; kept so it never flags
   - "Orderchamp"           # marketplace, not a Shopify vendor value today
+  - "RIBECO"               # PROVISIONAL (2026-11-10): supplier, product copy never names it. If GS1 shows the RIBECO GTINs (prefix 4015049) are registered to RIBECO,
+                           # move it to `passthrough` like SalesFever to avoid a GTIN/brand mismatch warning in Merchant Center.
 
 # SalesFever -- decided 06.10.2026 (permanent). GS1 lookup confirms the 18 SalesFever
 # GTINs (prefix 4251744) are registered to SalesFever GmbH, so `brand` must be

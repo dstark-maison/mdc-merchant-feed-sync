@@ -132,4 +132,4 @@ def test_idealo_unknown_vendor_still_fails_loudly_on_missing_shipping_rate(tmp_p
     """Pre-existing guard, unchanged: a vendor with no idealo shipping rate
     must break the build rather than get a guessed rate."""
     with pytest.raises(ValueError, match="No idealo DE shipping rate"):
-        _run(tmp_path, monkeypatch, [_row("RIBECO", "Neues Produkt", "G")])
+        _run(tmp_path, monkeypatch, [_row("Robinil", "Neues Produkt", "G")])

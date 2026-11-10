@@ -1246,3 +1246,26 @@ def test_usable_gtin_placeholder_and_empty_still_blank():
     assert build_feed.usable_gtin("3210810000000") == ""
     assert build_feed.usable_gtin("") == ""
     assert build_feed.usable_gtin(None) == ""
+
+
+# ---------------------------------------------------------------------------
+# RIBECO per-offer shipping
+# ---------------------------------------------------------------------------
+def test_ribeco_shipping_values_per_market():
+    cfg = {"handling_days": [0, 1], "transit_days": [1, 2], "rates": {1: {"DE": "0.00", "AT": "13.61", "LU": "13.27", "BE": "13.72", "NL": "13.72", "FR": "19.15"}}, "skus": {"S1": 1}}
+    assert build_feed.shipping_values_for("RIBECO", "S1", "de", cfg) == ["DE:0.00 EUR:0:1:1:2", "AT:13.61 EUR:0:1:1:2", "LU:13.27 EUR:0:1:1:2"]
+    assert build_feed.shipping_values_for("RIBECO", "S1", "be-fr", cfg) == ["BE:13.72 EUR:0:1:1:2", "FR:19.15 EUR:0:1:1:2"]
+    assert len(build_feed.shipping_values_for("RIBECO", "S1", "en", cfg)) == 6
+    assert build_feed.shipping_values_for("VIVARAISE", "S1", "de", cfg) == []
+
+
+def test_ribeco_unknown_sku_raises():
+    cfg = {"handling_days": [0, 1], "transit_days": [1, 2], "rates": {1: {}}, "skus": {}}
+    with pytest.raises(ValueError):
+        build_feed.shipping_values_for("RIBECO", "NOPE", "de", cfg)
+
+
+def test_ribeco_shipping_file_is_valid_and_germany_is_free():
+    cfg = build_feed.load_ribeco_shipping()
+    assert len(cfg["skus"]) == 51
+    assert all(r["DE"] == "0.00" for r in cfg["rates"].values())
