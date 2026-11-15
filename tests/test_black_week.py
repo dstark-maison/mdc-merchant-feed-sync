@@ -195,6 +195,31 @@ def test_idealo_pipeline_price_inside_and_outside_window(tmp_path, monkeypatch):
 XMAS_EFFECTIVE = "2026-12-01T00:00+0100/2026-12-25T23:59+0100"
 
 
+@pytest.fixture
+def xmas_on(monkeypatch):
+    """The Christmas sale is switched off in production (CHRISTMAS_ENABLED = False); these tests exercise the logic with it on."""
+    monkeypatch.setattr(black_week, "CHRISTMAS_ENABLED", True)
+
+
+def test_christmas_disabled_by_default_no_sale_in_any_feed():
+    assert black_week.CHRISTMAS_ENABLED is False
+    for now in (berlin(2026, 11, 30, 23, 59), berlin(2026, 12, 1, 0, 0), berlin(2026, 12, 10, 12, 0), berlin(2026, 12, 25, 23, 59)):
+        assert black_week.christmas_in_window(now) is False
+        if now >= berlin(2026, 12, 1):
+            assert black_week.gmc_sale_fields(_row(), now) == ("", "")
+            assert black_week.idealo_price(_row(), now) == "29.95"
+    # Black Week itself is unaffected
+    assert black_week.gmc_sale_fields(_row(), berlin(2026, 11, 25)) == ("26.96 EUR", EFFECTIVE)
+    assert black_week.idealo_price(_row(), berlin(2026, 11, 25)) == "26.96"
+
+
+def test_pipelines_carry_no_christmas_sale_by_default(tmp_path, monkeypatch):
+    rows = _run(tmp_path, monkeypatch, "t_xmas_off", berlin(2026, 12, 1, 0, 5))
+    assert rows and all(r["sale_price"] == "" and r["sale_price_effective_date"] == "" for r in rows)
+    ide = _run_idealo(tmp_path, monkeypatch, "i_xmas_off", berlin(2026, 12, 10, 12, 0))
+    assert [r["price"] for r in ide if r["sku"].endswith("-VV")] and all(r["price"] == "29.95" for r in ide if r["sku"].endswith("-VV"))
+
+
 @pytest.mark.parametrize("vendor,title,handle,pct", [
     ("VIVARAISE", "Cotton Velvet Cushion Fara", "x", 5),
     ("MoST Blankets", "Wool Throw", "x", 5),
@@ -214,7 +239,7 @@ def test_christmas_pct(vendor, title, handle, pct):
     (berlin(2026, 12, 25, 23, 59), True),
     (berlin(2026, 12, 26, 0, 0), False),
 ])
-def test_christmas_in_window(now, inside):
+def test_christmas_in_window(xmas_on, now, inside):
     assert black_week.christmas_in_window(now) is inside
 
 
@@ -223,7 +248,7 @@ def test_christmas_effective_date_range():
     assert black_week.effective_date_range() == EFFECTIVE  # Black Week window unchanged
 
 
-def test_gmc_sale_fields_christmas_window():
+def test_gmc_sale_fields_christmas_window(xmas_on):
     # 29.95 -5 % = 29.95 - 1.49 (truncated) = 28.46; Black Week would give 26.96
     for now in (berlin(2026, 12, 1, 0, 0), berlin(2026, 12, 15, 12, 0), berlin(2026, 12, 25, 23, 59)):
         assert black_week.gmc_sale_fields(_row(), now) == ("28.46 EUR", XMAS_EFFECTIVE)
@@ -235,7 +260,7 @@ def test_gmc_sale_fields_christmas_window():
     assert black_week.gmc_sale_fields(ocean, berlin(2026, 12, 10)) == ("", "")
 
 
-def test_idealo_price_christmas_window():
+def test_idealo_price_christmas_window(xmas_on):
     assert black_week.idealo_price(_row(), berlin(2026, 11, 30, 23, 59)) == "26.96"   # still Black Week
     assert black_week.idealo_price(_row(), berlin(2026, 12, 1, 0, 0)) == "28.46"
     assert black_week.idealo_price(_row(), berlin(2026, 12, 25, 23, 59)) == "28.46"
@@ -243,7 +268,7 @@ def test_idealo_price_christmas_window():
     assert black_week.idealo_price(_row("Boomba Bamboo"), berlin(2026, 12, 10)) == "29.95"
 
 
-def test_gmc_pipeline_christmas_window(tmp_path, monkeypatch):
+def test_gmc_pipeline_christmas_window(xmas_on, tmp_path, monkeypatch):
     rows = _run(tmp_path, monkeypatch, "t_xmas", berlin(2026, 12, 10, 12, 0))
     vv = [r for r in rows if r["id"].endswith("-VV")]
     other = [r for r in rows if not r["id"].endswith("-VV")]
@@ -252,7 +277,7 @@ def test_gmc_pipeline_christmas_window(tmp_path, monkeypatch):
     assert other and all(r["sale_price"] == "" for r in other)
 
 
-def test_idealo_pipeline_christmas_window(tmp_path, monkeypatch):
+def test_idealo_pipeline_christmas_window(xmas_on, tmp_path, monkeypatch):
     inside = _run_idealo(tmp_path, monkeypatch, "i_xmas", berlin(2026, 12, 10, 12, 0))
     after = _run_idealo(tmp_path, monkeypatch, "i_xmas_after", berlin(2026, 12, 26, 0, 5))
     vv = lambda rows: [r for r in rows if r["sku"].endswith("-VV")]

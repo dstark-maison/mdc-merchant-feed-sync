@@ -50,6 +50,10 @@ PCT_BY_VENDOR = {
     "Coco & Cici": 5,
 }
 CHRISTMAS_PCT = 5
+# Master switch for the Christmas sale in the feeds. False while the "Weihnachten -5%" automatic discount in Shopify is
+# deactivated (2026-11-16): with it on, GMC sale_price / idealo price would advertise a 5 % Christmas price that checkout
+# does not charge. Set True only together with re-activating that discount (start 2026-11-30T23:00Z, end 2026-12-25T22:59:59Z).
+CHRISTMAS_ENABLED = False
 
 
 def _now(now):
@@ -82,12 +86,16 @@ def christmas_pct(vendor, title="", handle=""):
 
 
 def christmas_in_window(now=None):
-    """True from 1 Dec 00:00 up to and including 25 Dec 23:59 Berlin time."""
+    """True from 1 Dec 00:00 up to and including 25 Dec 23:59 Berlin time (always False while CHRISTMAS_ENABLED is off)."""
+    if not CHRISTMAS_ENABLED:
+        return False
     n = _now(now)
     return CHRISTMAS_START <= n <= CHRISTMAS_END.replace(second=59)
 
 
 def christmas_window_not_over(now=None):
+    if not CHRISTMAS_ENABLED:
+        return False
     return _now(now) <= CHRISTMAS_END.replace(second=59)
 
 
