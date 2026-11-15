@@ -120,7 +120,7 @@ API_VERSION = "2025-01"
 # ---------------------------------------------------------------------------
 MARKETS = {
     "de": {"locale": "de", "link_prefix": "", "countries": ["Germany", "Austria", "Luxembourg"]},
-    "be-fr": {"locale": "fr", "link_prefix": "/fr", "countries": ["Belgium", "France"]},
+    "be-fr": {"locale": "fr", "link_prefix": "/fr", "countries": ["Belgium", "France", "Luxembourg"]},  # MC source "PRODUCTS SOURCE BE-FR-LU" targets LU too
     "be-nl": {"locale": "nl", "link_prefix": "/nl", "countries": ["Belgium", "Netherlands"]},
     "en": {"locale": "en", "link_prefix": "/en", "countries": ["Germany", "Austria", "Belgium", "Luxembourg", "France", "Netherlands"], "primary": True},
 }

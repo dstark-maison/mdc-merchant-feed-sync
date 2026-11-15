@@ -1254,9 +1254,19 @@ def test_usable_gtin_placeholder_and_empty_still_blank():
 def test_ribeco_shipping_values_per_market():
     cfg = {"handling_days": [0, 1], "transit_days": [1, 2], "rates": {1: {"DE": "0.00", "AT": "13.61", "LU": "13.27", "BE": "13.72", "NL": "13.72", "FR": "19.15"}}, "skus": {"S1": 1}}
     assert build_feed.shipping_values_for("RIBECO", "S1", "de", cfg) == ["DE:0.00 EUR:0:1:1:2", "AT:13.61 EUR:0:1:1:2", "LU:13.27 EUR:0:1:1:2"]
-    assert build_feed.shipping_values_for("RIBECO", "S1", "be-fr", cfg) == ["BE:13.72 EUR:0:1:1:2", "FR:19.15 EUR:0:1:1:2"]
+    assert build_feed.shipping_values_for("RIBECO", "S1", "be-fr", cfg) == ["BE:13.72 EUR:0:1:1:2", "FR:19.15 EUR:0:1:1:2", "LU:13.27 EUR:0:1:1:2"]
     assert len(build_feed.shipping_values_for("RIBECO", "S1", "en", cfg)) == 6
     assert build_feed.shipping_values_for("VIVARAISE", "S1", "de", cfg) == []
+
+
+def test_ribeco_be_fr_every_sku_has_be_fr_lu_shipping():
+    # MC source "PRODUCTS SOURCE BE-FR-LU" targets Luxembourg: a RIBECO offer without LU shipping is Limited there.
+    cfg = build_feed.load_ribeco_shipping()
+    assert len(cfg["skus"]) == 51
+    for sku in cfg["skus"]:
+        vals = build_feed.shipping_values_for("RIBECO", sku, "be-fr", cfg)
+        assert [v.split(":")[0] for v in vals] == ["BE", "FR", "LU"], sku
+        assert all(v.split(":")[1].endswith(" EUR") for v in vals)
 
 
 def test_ribeco_unknown_sku_raises():
