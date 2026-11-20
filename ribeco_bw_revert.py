@@ -73,6 +73,15 @@ def _gql(domain, token, query, variables=None):
     return d["data"]
 
 
+SCOPES_QUERY = "{ currentAppInstallation{ accessScopes{ handle } } }"
+NEEDED_SCOPES = {"write_products", "write_inventory"}
+
+
+def missing_scopes(granted):
+    """Scopes the revert needs that the app token does not have (sorted list)."""
+    return sorted(NEEDED_SCOPES - set(granted))
+
+
 def alert(subject, body):
     try:
         from send_weekly_report import send_via_resend
@@ -94,6 +103,15 @@ def main(argv=None):
         return 1
     try:
         tok = _token(domain, cid, secret)
+        granted = [x["handle"] for x in _gql(domain, tok, SCOPES_QUERY)["currentAppInstallation"]["accessScopes"]]
+        missing = missing_scopes(granted)
+        print("app scopes: write_products=%s write_inventory=%s" % ("write_products" in granted, "write_inventory" in granted))
+        if missing:
+            msg = f"the app token lacks {missing}: the revert CANNOT write prices/costs. Use an app with these scopes or revert by hand."
+            print("PROBLEM: " + msg)
+            if args.apply:
+                alert("RIBECO Black Week revert: MISSING SCOPES", msg)
+                return 1
         rows = load_baseline()
         data = _gql(domain, tok, NODES_QUERY, {"ids": [f"gid://shopify/ProductVariant/{r['variant_id']}" for r in rows]})
         live = {n["id"].rsplit("/", 1)[1]: n for n in data["nodes"] if n}

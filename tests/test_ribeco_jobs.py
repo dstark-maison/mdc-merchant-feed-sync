@@ -40,3 +40,9 @@ def test_price_check_compare():
     assert "not found" in chk.compare(rows, gone)[0]
     cmp_changed = dict(ok, **{"6192972678": ("359.40", "649.00")})
     assert "compare_at" in chk.compare(rows, cmp_changed)[0]
+
+
+def test_missing_scopes():
+    assert rev.missing_scopes(["read_products", "write_products", "write_inventory"]) == []
+    assert rev.missing_scopes(["read_products", "write_products"]) == ["write_inventory"]
+    assert rev.missing_scopes([]) == ["write_inventory", "write_products"]
