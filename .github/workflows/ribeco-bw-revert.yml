@@ -36,8 +36,11 @@ jobs:
       - name: Revert (dry run unless scheduled / dispatched event / apply=true)
         env:
           SHOPIFY_STORE_DOMAIN: ${{ secrets.SHOPIFY_STORE_DOMAIN }}
-          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
-          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
+          # The feed app (SHOPIFY_CLIENT_*) is read-only (checked 2026-11-20: no write_products / write_inventory). The revert needs an app WITH
+          # those scopes: set the repo secrets SHOPIFY_WRITE_CLIENT_ID / SHOPIFY_WRITE_CLIENT_SECRET (same store). Until they exist the fallback
+          # below is used, the script's scope check aborts and emails an alert.
+          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_WRITE_CLIENT_ID || secrets.SHOPIFY_CLIENT_ID }}
+          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_WRITE_CLIENT_SECRET || secrets.SHOPIFY_CLIENT_SECRET }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: python ribeco_bw_revert.py ${{ (github.event_name != 'workflow_dispatch' || inputs.apply) && '--apply' || '' }}
       - name: Rebuild the feeds
