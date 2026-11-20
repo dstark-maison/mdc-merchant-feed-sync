@@ -13,7 +13,7 @@ import build_feed  # noqa: E402
 from black_week import BERLIN  # noqa: E402
 
 FIXTURE_CSV = Path(__file__).parent / "fixtures" / "sample_products_export.csv"
-EFFECTIVE = "2026-11-23T00:00+0100/2026-11-30T23:59+0100"
+EFFECTIVE = "2026-11-20T16:30+0100/2026-11-30T23:59+0100"
 
 
 def berlin(*args):
@@ -55,8 +55,8 @@ def test_discounted_amount_unusable_input():
 
 # ---- window (Europe/Berlin) ------------------------------------------------------------------------------------
 @pytest.mark.parametrize("now,inside", [
-    (berlin(2026, 11, 22, 23, 59), False),
-    (berlin(2026, 11, 23, 0, 0), True),
+    (berlin(2026, 11, 20, 16, 29), False),
+    (berlin(2026, 11, 20, 16, 30), True),
     (berlin(2026, 11, 30, 23, 59), True),
     (berlin(2026, 12, 1, 0, 0), False),
 ])
@@ -65,8 +65,8 @@ def test_in_window(now, inside):
 
 
 def test_in_window_converts_other_timezones():
-    assert black_week.in_window(datetime(2026, 11, 22, 23, 5, tzinfo=timezone.utc)) is True    # 00:05 Berlin, 23 Nov
-    assert black_week.in_window(datetime(2026, 11, 22, 22, 59, tzinfo=timezone.utc)) is False  # 23:59 Berlin, 22 Nov
+    assert black_week.in_window(datetime(2026, 11, 20, 15, 35, tzinfo=timezone.utc)) is True    # 16:35 Berlin, 20 Nov
+    assert black_week.in_window(datetime(2026, 11, 20, 15, 29, tzinfo=timezone.utc)) is False  # 16:29 Berlin, 20 Nov
     assert black_week.in_window(datetime(2026, 11, 30, 22, 59, tzinfo=timezone.utc)) is True   # 23:59 Berlin, 30 Nov
     assert black_week.in_window(datetime(2026, 11, 30, 23, 0, tzinfo=timezone.utc)) is False   # 00:00 Berlin, 1 Dec
 
@@ -87,19 +87,19 @@ def test_gmc_sale_fields_published_from_the_eve_and_inside_window():
 
 
 def test_gmc_sale_fields_empty_before_publish_from():
-    for now in (berlin(2026, 10, 27, 6, 0), berlin(2026, 11, 21, 23, 59), berlin(2026, 11, 21, 23, 59, 59)):
+    for now in (berlin(2026, 10, 27, 6, 0), berlin(2026, 11, 19, 23, 59), berlin(2026, 11, 19, 23, 59, 59)):
         assert black_week.gmc_sale_fields(_row(), now) == ("", "")
-    assert black_week.gmc_sale_fields(_row(), berlin(2026, 11, 22, 0, 0)) == ("26.96 EUR", EFFECTIVE)
+    assert black_week.gmc_sale_fields(_row(), berlin(2026, 11, 20, 0, 0)) == ("26.96 EUR", EFFECTIVE)
 
 
 def test_publish_from_boundary_is_timezone_and_dst_safe():
-    # 22 Nov is CET (UTC+1): 00:00 Berlin = 21 Nov 23:00 UTC. The clocks went back on 25 Oct (CEST -> CET).
+    # 20 Nov is CET (UTC+1): 00:00 Berlin = 19 Nov 23:00 UTC. The clocks went back on 25 Oct (CEST -> CET).
     assert black_week.PUBLISH_FROM.utcoffset().total_seconds() == 3600
-    assert black_week.gmc_sale_fields(_row(), datetime(2026, 11, 21, 22, 59, 59, tzinfo=timezone.utc)) == ("", "")
-    assert black_week.gmc_sale_fields(_row(), datetime(2026, 11, 21, 23, 0, tzinfo=timezone.utc)) == ("26.96 EUR", EFFECTIVE)
-    # a UTC+2 (summer time) clock reading of 22 Nov 00:30 is 21 Nov 22:30 UTC = still before the boundary
+    assert black_week.gmc_sale_fields(_row(), datetime(2026, 11, 19, 22, 59, 59, tzinfo=timezone.utc)) == ("", "")
+    assert black_week.gmc_sale_fields(_row(), datetime(2026, 11, 19, 23, 0, tzinfo=timezone.utc)) == ("26.96 EUR", EFFECTIVE)
+    # a UTC+2 (summer time) clock reading of 20 Nov 00:30 is 19 Nov 22:30 UTC = still before the boundary
     plus2 = timezone(timedelta(hours=2))
-    assert black_week.gmc_sale_fields(_row(), datetime(2026, 11, 22, 0, 30, tzinfo=plus2)) == ("", "")
+    assert black_week.gmc_sale_fields(_row(), datetime(2026, 11, 20, 0, 30, tzinfo=plus2)) == ("", "")
     # the last CEST day (24 Oct, UTC+2) and the first CET day (25 Oct 03:00) are both before the boundary
     assert black_week.gmc_sale_fields(_row(), berlin(2026, 10, 24, 23, 59)) == ("", "")
     assert black_week.gmc_sale_fields(_row(), berlin(2026, 10, 25, 3, 30)) == ("", "")
@@ -114,8 +114,8 @@ def test_gmc_sale_fields_empty_after_window_and_for_other_rows():
 
 # ---- idealo price ----------------------------------------------------------------------------------------------
 def test_idealo_price_discounted_only_inside_window():
-    assert black_week.idealo_price(_row(), berlin(2026, 11, 22, 23, 59)) == "29.95"
-    assert black_week.idealo_price(_row(), berlin(2026, 11, 23, 0, 0)) == "26.96"
+    assert black_week.idealo_price(_row(), berlin(2026, 11, 20, 16, 29)) == "29.95"
+    assert black_week.idealo_price(_row(), berlin(2026, 11, 20, 16, 30)) == "26.96"
     assert black_week.idealo_price(_row(), berlin(2026, 11, 30, 23, 59)) == "26.96"
     assert black_week.idealo_price(_row(), berlin(2026, 12, 26, 0, 0)) == "29.95"
     assert black_week.idealo_price(_row("Boomba Bamboo"), berlin(2026, 11, 25)) == "29.95"
@@ -156,9 +156,9 @@ def test_gmc_pipeline_writes_sale_columns_inside_window(tmp_path, monkeypatch):
 
 
 def test_gmc_pipeline_sale_columns_empty_before_publish_from(tmp_path, monkeypatch):
-    rows = _run(tmp_path, monkeypatch, "t_pre", berlin(2026, 11, 21, 23, 59))
+    rows = _run(tmp_path, monkeypatch, "t_pre", berlin(2026, 11, 19, 23, 59))
     assert rows and all(r["sale_price"] == "" and r["sale_price_effective_date"] == "" for r in rows)
-    rows = _run(tmp_path, monkeypatch, "t_eve", berlin(2026, 11, 22, 0, 0))
+    rows = _run(tmp_path, monkeypatch, "t_eve", berlin(2026, 11, 20, 0, 0))
     vv = [r for r in rows if r["id"].endswith("-VV")]
     assert vv and all(r["sale_price"] == "26.96 EUR" for r in vv)
 
@@ -180,8 +180,8 @@ def _run_idealo(tmp_path, monkeypatch, name, now):
 
 
 def test_idealo_pipeline_price_inside_and_outside_window(tmp_path, monkeypatch):
-    inside = _run_idealo(tmp_path, monkeypatch, "i_in", berlin(2026, 11, 23, 0, 5))
-    before = _run_idealo(tmp_path, monkeypatch, "i_before", berlin(2026, 11, 22, 6, 0))
+    inside = _run_idealo(tmp_path, monkeypatch, "i_in", berlin(2026, 11, 20, 16, 35))
+    before = _run_idealo(tmp_path, monkeypatch, "i_before", berlin(2026, 11, 20, 6, 0))
     after = _run_idealo(tmp_path, monkeypatch, "i_after", berlin(2026, 12, 26, 0, 5))
     vv = lambda rows: [r for r in rows if r["sku"].endswith("-VV")]
     other = lambda rows: [r for r in rows if not r["sku"].endswith("-VV")]

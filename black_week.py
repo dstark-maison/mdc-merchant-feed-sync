@@ -1,10 +1,10 @@
 """
 Black Week 2026 pricing for the feeds (Google Merchant Center + idealo).
 
-Window: 2026-11-23 00:00 to 2026-11-30 23:59, Europe/Berlin. Date-driven -- no manual switch: every build decides
+Window: 2026-11-20 16:30 to 2026-11-30 23:59, Europe/Berlin. Date-driven -- no manual switch: every build decides
 from the current time.
 
-  * Google Merchant Center feeds (all four markets): `price` stays the regular price; from PUBLISH_FROM (22 Nov 00:00
+  * Google Merchant Center feeds (all four markets): `price` stays the regular price; from PUBLISH_FROM (20 Nov 00:00
     Berlin) until the window ends, matching rows also carry `sale_price` + `sale_price_effective_date` (Google applies
     the sale price only inside the window, so the feed must be published BEFORE the window opens -- but not earlier:
     Merchant Center shows a scheduled sale as a sale). Before PUBLISH_FROM and after the window the two columns are
@@ -35,13 +35,13 @@ from decimal import Decimal, ROUND_DOWN
 from zoneinfo import ZoneInfo
 
 BERLIN = ZoneInfo("Europe/Berlin")
-WINDOW_START = datetime(2026, 11, 23, 0, 0, tzinfo=BERLIN)
+WINDOW_START = datetime(2026, 11, 20, 16, 30, tzinfo=BERLIN)
 WINDOW_END = datetime(2026, 11, 30, 23, 59, tzinfo=BERLIN)
 CHRISTMAS_START = datetime(2026, 12, 1, 0, 0, tzinfo=BERLIN)
 CHRISTMAS_END = datetime(2026, 12, 25, 23, 59, tzinfo=BERLIN)
 # GMC sale fields stay empty before this moment. Google applies sale_price only inside its effective date, but Merchant
-# Center already shows a scheduled sale as a sale (2026-10-27), so the feed carries it only from the eve of Black Week.
-PUBLISH_FROM = datetime(2026, 11, 22, 0, 0, tzinfo=BERLIN)
+# Center already shows a scheduled sale as a sale (2026-10-27), so the feed carries it only from the morning of the Black Week start day (start moved 23 Nov -> 20 Nov 16:30 on 2026-11-20).
+PUBLISH_FROM = datetime(2026, 11, 20, 0, 0, tzinfo=BERLIN)
 
 PCT_BY_VENDOR = {
     "VIVARAISE": 10,
@@ -125,7 +125,7 @@ def _range(start, end):
 
 
 def effective_date_range():
-    """Google's ISO 8601 interval of the Black Week window, e.g. 2026-11-23T00:00+0100/2026-11-30T23:59+0100."""
+    """Google's ISO 8601 interval of the Black Week window, e.g. 2026-11-20T16:30+0100/2026-11-30T23:59+0100."""
     return _range(WINDOW_START, WINDOW_END)
 
 
