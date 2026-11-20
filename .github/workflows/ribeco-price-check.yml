@@ -1,0 +1,29 @@
+name: RIBECO price check
+
+# Daily until 30 Nov 2026: re-pulls the 6 RIBECO Black Week variants from ribeco.de and emails (Resend) when a price
+# differs from the approved table. 08:00 Berlin = 07:00 UTC (CET); GitHub's cron can start late.
+on:
+  schedule:
+    - cron: "2 7 21-30 11 *"
+  workflow_dispatch:
+    inputs:
+      always:
+        description: "Also mail when everything matches"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: python ribeco_price_check.py ${{ inputs.always && '--always' || '' }}

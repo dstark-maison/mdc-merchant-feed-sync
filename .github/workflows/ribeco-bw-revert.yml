@@ -1,0 +1,47 @@
+name: RIBECO Black Week revert
+
+# Ends the 6 RIBECO sale prices (price, compare_at, cost) and then rebuilds the feeds. Black Week ends 30 Nov 2026 23:59
+# Berlin = 22:59 UTC. GitHub's own cron starts late (hours, observed 2026-09/10), so the PRIMARY trigger should be a
+# cron-job.org dispatch (event_type "ribeco-bw-revert") at 22:59 UTC (cron-job.org fires on whole minutes); the cron below is the fallback. The script is
+# idempotent, so a double run is harmless, and it refuses --apply before 22:55 UTC on 30 Nov (see NOT_BEFORE).
+on:
+  schedule:
+    - cron: "59 22 30 11 *"   # 2026-11-30 22:59 UTC = 23:59 Berlin
+  repository_dispatch:
+    types: [ribeco-bw-revert]
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Really write (default: dry run, prints what would change)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: write   # to trigger build-feed.yml afterwards
+
+concurrency:
+  group: ribeco-bw-revert
+  cancel-in-progress: false
+
+jobs:
+  revert:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Revert (dry run unless scheduled / dispatched event / apply=true)
+        env:
+          SHOPIFY_STORE_DOMAIN: ${{ secrets.SHOPIFY_STORE_DOMAIN }}
+          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
+          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: python ribeco_bw_revert.py ${{ (github.event_name != 'workflow_dispatch' || inputs.apply) && '--apply' || '' }}
+      - name: Rebuild the feeds
+        if: success() && (github.event_name != 'workflow_dispatch' || inputs.apply)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build-feed.yml --repo ${{ github.repository }}
