@@ -283,3 +283,47 @@ def test_idealo_pipeline_christmas_window(xmas_on, tmp_path, monkeypatch):
     vv = lambda rows: [r for r in rows if r["sku"].endswith("-VV")]
     assert vv(inside) and all(r["price"] == "28.46" for r in vv(inside))
     assert vv(after) and all(r["price"] == "29.95" for r in vv(after))
+
+
+# ---- RIBECO per-variant table (data/ribeco_bw_prices.csv) ------------------------------------------------------
+def _rib(sku="6192972677", price="539.00"):
+    return {"id": sku, "vendor": "RIBECO", "brand": "RIBECO", "title": "Hybridschaum Wendematratze 18 cm",
+            "handle": "hybrid-foam-reversible-mattress-18-cm", "price_amount": price, "price": f"{price} EUR"}
+
+
+def test_ribeco_table_lists_only_the_six_discounted_variants():
+    t = black_week.ribeco_prices()
+    assert set(t) == {"6192972677", "6192972678", "6192972679", "6192971285", "6192971282", "6192971283"}
+    assert t["6192972677"] == ("539.00", "323.40")
+    assert t["6192971283"] == ("221.00", "187.85")
+
+
+def test_ribeco_gmc_sale_uses_the_table_not_a_vendor_percentage():
+    assert black_week.gmc_sale_fields(_rib(), berlin(2026, 11, 20, 12, 0)) == ("323.40 EUR", EFFECTIVE)
+    assert black_week.gmc_sale_fields(_rib("6192970049", "679.00"), berlin(2026, 11, 20, 12, 0)) == ("", "")  # 24 cm: no table row
+    assert black_week.gmc_sale_fields(_rib(), berlin(2026, 12, 2, 12, 0)) == ("", "")                          # after the window
+    assert black_week.gmc_sale_fields(_rib(), berlin(2026, 11, 19, 23, 0)) == ("", "")                         # before PUBLISH_FROM
+
+
+def test_ribeco_regular_price_is_pinned_before_and_after_the_shopify_price_write():
+    for shopify_price in ("539.00", "323.40"):   # before / after the write at 16:30
+        row = _rib(price=shopify_price)
+        black_week.apply_ribeco_regular_price(row, berlin(2026, 11, 20, 17, 0))
+        assert row["price_amount"] == "539.00" and row["price"] == "539.00 EUR"
+        assert black_week.gmc_sale_fields(row, berlin(2026, 11, 20, 17, 0)) == ("323.40 EUR", EFFECTIVE)
+
+
+def test_ribeco_row_is_left_alone_after_the_window_and_for_other_vendors():
+    row = _rib(price="323.40")
+    black_week.apply_ribeco_regular_price(row, berlin(2026, 12, 2, 12, 0))
+    assert row["price_amount"] == "323.40"
+    other = dict(_rib(), vendor="VIVARAISE", brand="VIVARAISE")
+    assert black_week.ribeco_entry(other) is None
+
+
+def test_ribeco_idealo_price_switches_at_the_window_start():
+    assert black_week.idealo_price(_rib(), berlin(2026, 11, 20, 16, 29)) == "539.00"
+    assert black_week.idealo_price(_rib(), berlin(2026, 11, 20, 16, 30)) == "323.40"
+    assert black_week.idealo_price(_rib(price="323.40"), berlin(2026, 11, 20, 16, 29)) == "539.00"  # price already written
+    assert black_week.idealo_price(_rib(), berlin(2026, 11, 30, 23, 59)) == "323.40"
+    assert black_week.idealo_price(_rib(), berlin(2026, 12, 1, 0, 0)) == "539.00"

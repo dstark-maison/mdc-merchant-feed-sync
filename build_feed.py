@@ -1201,6 +1201,7 @@ def run_pipeline(rows, out_basename, run_label, market="de", now=None):
 
     # Black Week 2026: sale_price + effective date for matching rows (price stays regular). now=None -> current time.
     for row in accepted:
+        black_week.apply_ribeco_regular_price(row, now)  # RIBECO table rows: regular price pinned, sale via the table
         row["sale_price"], row["sale_price_effective_date"] = black_week.gmc_sale_fields(row, now)
 
     # RIBECO per-offer shipping (see ribeco_shipping.yaml). Columns exist only when at least one accepted row carries them.

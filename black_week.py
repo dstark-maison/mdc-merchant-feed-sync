@@ -30,8 +30,10 @@ localized (DE "Ozeanblau"), the base handle is not.
 Rounding matches Shopify (verified 2026-10-26 with draftOrderCalculate on tie prices): the discount amount is
 truncated to the cent, discounted = price - floor(price * pct / 100).
 """
+import csv
 from datetime import datetime
 from decimal import Decimal, ROUND_DOWN
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -54,6 +56,44 @@ CHRISTMAS_PCT = 5
 # deactivated (2026-11-16): with it on, GMC sale_price / idealo price would advertise a 5 % Christmas price that checkout
 # does not charge. Set True only together with re-activating that discount (start 2026-11-30T23:00Z, end 2026-12-25T22:59:59Z).
 CHRISTMAS_ENABLED = False
+
+
+# RIBECO: per-variant prices matched to ribeco.de (not a vendor percentage). data/ribeco_bw_prices.csv lists ONLY the
+# variants that are cheaper on ribeco.de: sku;regular;sale. While the window is not over, those rows carry the table's
+# REGULAR price as `price` (so the feed stays correct before AND after the Shopify price write: Shopify then holds the sale
+# price with compare_at = regular) and `sale_price` = the table's sale price with the Black Week effective date.
+RIBECO_PRICES_PATH = Path(__file__).parent / "data" / "ribeco_bw_prices.csv"
+_ribeco_cache = {}
+
+
+def ribeco_prices():
+    """{sku: (regular, sale)} as strings, '' rows ignored."""
+    key = str(RIBECO_PRICES_PATH)
+    if key not in _ribeco_cache:
+        table = {}
+        if RIBECO_PRICES_PATH.exists():
+            with open(RIBECO_PRICES_PATH, encoding="utf-8", newline="") as f:
+                for r in csv.DictReader(f, delimiter=";"):
+                    sku = (r.get("sku") or "").strip()
+                    if sku and r.get("regular") and r.get("sale"):
+                        table[sku] = (r["regular"].strip(), r["sale"].strip())
+        _ribeco_cache[key] = table
+    return _ribeco_cache[key]
+
+
+def ribeco_entry(row):
+    """(regular, sale) for a RIBECO row in the table, else None."""
+    if (row.get("vendor") or row.get("brand") or "").strip() != "RIBECO":
+        return None
+    return ribeco_prices().get(str(row.get("id", "")).strip())
+
+
+def apply_ribeco_regular_price(row, now=None):
+    """Pin the row's regular price to the table value while the Black Week window is not over."""
+    entry = ribeco_entry(row)
+    if entry and window_not_over(now):
+        row["price_amount"] = entry[0]
+        row["price"] = f"{entry[0]} EUR"
 
 
 def _now(now):
@@ -141,6 +181,9 @@ def gmc_sale_fields(row, now=None):
     Google takes one sale per row: the first window that is not over yet (Black Week, then Christmas)."""
     if _now(now) < PUBLISH_FROM:
         return "", ""
+    entry = ribeco_entry(row)
+    if entry and window_not_over(now):
+        return f"{entry[1]} EUR", effective_date_range()
     if window_not_over(now):
         pct, effective = row_pct(row), effective_date_range()
     elif christmas_window_not_over(now):
@@ -158,6 +201,9 @@ def gmc_sale_fields(row, now=None):
 def idealo_price(row, now=None):
     """The idealo `price`: discounted inside either window for matching rows, else the regular price_amount."""
     regular = row.get("price_amount", "")
+    entry = ribeco_entry(row)
+    if entry and window_not_over(now):
+        return entry[1] if in_window(now) else entry[0]
     if in_window(now):
         pct = row_pct(row)
     elif christmas_in_window(now):
