@@ -46,3 +46,9 @@ def test_missing_scopes():
     assert rev.missing_scopes(["read_products", "write_products", "write_inventory"]) == []
     assert rev.missing_scopes(["read_products", "write_products"]) == ["write_inventory"]
     assert rev.missing_scopes([]) == ["write_inventory", "write_products"]
+
+
+def test_has_campaign_tag():
+    assert rev.has_campaign_tag(["RIBECO", "campaign-selection"]) is True
+    assert rev.has_campaign_tag(["RIBECO"]) is False
+    assert rev.has_campaign_tag(None) is False

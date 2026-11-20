@@ -1,6 +1,9 @@
 """
 Revert the 6 RIBECO Black Week variants after the window (Black Week 2026, ends 30 Nov 23:59 Europe/Berlin).
 
+Also removes the temporary product tag campaign-selection from the two RIBECO products (they were tagged on 2026-11-20 to show in the
+black-friday collection; mdc-ops/onboard/campaign_tag_check.py has a temporary exception until 1 Dec and flags the tag again afterwards).
+
 For each variant in data/ribeco_bw_baseline.csv (explicit variant ids of the LIVE products; the draft Collective
 duplicate "Gelschaum-Topper" shares the SKUs and is never touched): price -> regular, compare_at -> none,
 unit cost -> cost_regular. Idempotent. A variant whose price is neither the sale nor the regular price (a manual edit)
@@ -73,6 +76,9 @@ def _gql(domain, token, query, variables=None):
     return d["data"]
 
 
+CAMPAIGN_TAG = "campaign-selection"
+TAGS_QUERY = """query($ids:[ID!]!){ nodes(ids:$ids){ ... on Product{ id tags } } }"""
+TAGS_REMOVE = """mutation($i:ID!,$t:[String!]!){ tagsRemove(id:$i, tags:$t){ userErrors{ field message } } }"""
 SCOPES_QUERY = "{ currentAppInstallation{ accessScopes{ handle } } }"
 NEEDED_SCOPES = {"write_products", "write_inventory"}
 
@@ -80,6 +86,10 @@ NEEDED_SCOPES = {"write_products", "write_inventory"}
 def missing_scopes(granted):
     """Scopes the revert needs that the app token does not have (sorted list)."""
     return sorted(NEEDED_SCOPES - set(granted))
+
+
+def has_campaign_tag(tags):
+    return CAMPAIGN_TAG in (tags or [])
 
 
 def alert(subject, body):
@@ -142,6 +152,20 @@ def main(argv=None):
                     print(f"{r['sku']}: reverted to {r['regular']} (cost {r['cost_regular']}, compare_at removed)")
         else:
             print(f"DRY RUN: {len(todo)} variant(s) would be reverted.")
+        # the temporary campaign-selection tag on the two live RIBECO products (independent of the price outcome: the campaign is over)
+        pids = sorted({r["product_id"] for r in rows})
+        tdata = _gql(domain, tok, TAGS_QUERY, {"ids": [f"gid://shopify/Product/{p}" for p in pids]})
+        for n in (x for x in tdata["nodes"] if x):
+            if not has_campaign_tag(n.get("tags")):
+                print(f"{n['id']}: no {CAMPAIGN_TAG} tag (nothing to remove)")
+            elif args.apply:
+                errs = _gql(domain, tok, TAGS_REMOVE, {"i": n["id"], "t": [CAMPAIGN_TAG]})["tagsRemove"]["userErrors"]
+                if errs:
+                    problems.append(f"{n['id']}: tagsRemove errors {errs}")
+                else:
+                    print(f"{n['id']}: removed tag {CAMPAIGN_TAG}")
+            else:
+                print(f"{n['id']}: would remove tag {CAMPAIGN_TAG}")
         if problems:
             alert("RIBECO Black Week revert: PROBLEMS", "\n".join(problems))
             print("\n".join(problems))
