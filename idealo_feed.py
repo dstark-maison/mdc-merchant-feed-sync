@@ -62,6 +62,7 @@ import os
 import re
 import sys
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -71,6 +72,7 @@ import yaml
 import black_week
 import build_feed
 from build_feed import (
+    FREE_SHIPPING_THRESHOLD,
     MARKETS,
     apply_brand_mapping,
     ProductRow,  # noqa: F401  -- re-exported for parity with build_feed's shape; not constructed directly here
@@ -188,8 +190,10 @@ IDEALO_SHIPPING_RATES_DE = {
     "std_9": "9.00",
     "std_990": "9.90",
     "std_10": "10.00",
-    "sf_bulky": "119.00",
-    "sf_small": "19.90",
+    # SalesFever ships free since 2026-11-21 (Shopify profiles EUR 0); sf_rose = Rose Velvet 90x200, DE free (idealo.de is DE only)
+    "sf_bulky": "0.00",
+    "sf_small": "0.00",
+    "sf_rose": "0.00",
     "std_15": "15.00",
     "ribeco": "0.00",  # RIBECO ships free within Germany on every tier (idealo.de only)
 }
@@ -205,7 +209,7 @@ def _vendor_of(row):
     return (vendor or "").strip()
 
 
-def shipping_cost_for_row(row, product_type=""):
+def shipping_cost_for_row(row, product_type="", now=None):
     """deliveryCosts_dpd for one offer: looks up build_feed.shipping_label_for's
     Merchant Center shipping_label in IDEALO_SHIPPING_RATES_DE. Reusing
     shipping_label_for (rather than a second vendor table here) means idealo
@@ -215,14 +219,23 @@ def shipping_cost_for_row(row, product_type=""):
     "std_15") -- is a config gap and fails the build loudly rather than ever
     guessing a rate."""
     vendor = _vendor_of(row)
-    label = shipping_label_for(vendor, product_type)
+    label = shipping_label_for(vendor, product_type, row.get("id", ""))
     try:
-        return IDEALO_SHIPPING_RATES_DE[label]
+        rate = IDEALO_SHIPPING_RATES_DE[label]
     except KeyError:
         raise ValueError(
             f"No idealo DE shipping rate configured for shipping_label '{label}' "
             f"(vendor '{vendor}'); add it to IDEALO_SHIPPING_RATES_DE"
         )
+    # Free shipping from the cart threshold: an idealo order is one offer, so the offer's EFFECTIVE price (the `price` written to the
+    # feed, i.e. after the Black Week discount) decides. RIBECO is untouched (own DE-free rate, own table).
+    if vendor != "RIBECO" and rate != "0.00":
+        try:
+            if Decimal(str(black_week.idealo_price(row, now)).strip()) >= FREE_SHIPPING_THRESHOLD:
+                return "0.00"
+        except Exception:
+            pass  # unusable price: keep the label rate
+    return rate
 
 
 def delivery_text_for_row(row):
@@ -438,7 +451,7 @@ def run_idealo_pipeline(rows, product_types, out_basename, run_label, variant_id
                 "categoryPath": category_path,
                 "size": row.get("size", ""),
                 "colour": row.get("color", ""),
-                "deliveryCosts_dpd": shipping_cost_for_row(row, product_type=product_type),
+                "deliveryCosts_dpd": shipping_cost_for_row(row, product_type=product_type, now=now),
                 "paymentCosts_paypal": PAYMENT_COST,
                 "paymentCosts_credit_card": PAYMENT_COST,
                 "delivery": delivery_text_for_row(row),

@@ -1092,6 +1092,20 @@ def test_shipping_label_for(vendor, ptype, label):
     assert build_feed.shipping_label_for(vendor, ptype) == label
 
 
+@pytest.mark.parametrize("sku,ptype,label", [
+    ("396995", "Upholstered Beds", "sf_rose"),   # Rose Velvet 90x200: own Shopify profile (DE 0 / rest 239)
+    ("396995", "", "sf_rose"),
+    ("396988", "Upholstered Beds", "sf_bulky"),  # any other bed
+    ("369500", "Bed Benches", "sf_small"),
+])
+def test_shipping_label_for_salesfever_rose_by_sku(sku, ptype, label):
+    assert build_feed.shipping_label_for("SalesFever", ptype, sku) == label
+
+
+def test_rose_sku_only_matters_for_salesfever():
+    assert build_feed.shipping_label_for("VIVARAISE", "Throws", "396995") == "std_15"
+
+
 def test_feed_has_shipping_label_but_no_per_row_shipping_column():
     assert "shipping_label" in build_feed.FEED_COLUMNS
     assert "shipping" not in build_feed.FEED_COLUMNS
@@ -1294,3 +1308,29 @@ def test_ribeco_gel_foam_topper_uses_tiers_8_9_10():
     assert build_feed.shipping_values_for("RIBECO", "6192972763", "de", cfg) == ["DE:0.00 EUR:0:1:1:2", "AT:7.99 EUR:0:1:1:2", "LU:7.99 EUR:0:1:1:2"]
     assert build_feed.shipping_values_for("RIBECO", "6192972136", "be-fr", cfg) == ["BE:10.99 EUR:0:1:1:2", "FR:20.99 EUR:0:1:1:2", "LU:10.99 EUR:0:1:1:2"]
     assert build_feed.shipping_values_for("RIBECO", "6192972765", "be-nl", cfg) == ["BE:8.99 EUR:0:1:1:2", "NL:8.99 EUR:0:1:1:2"]
+
+
+# Free shipping (2026-11-21): RIBECO per-offer rates follow the automatic discount (effective price >= 75, rate <= 25 -> 0.00).
+_FREE_CFG = {"handling_days": [0, 1], "transit_days": [1, 2],
+             "rates": {4: {"DE": "0.00", "AT": "18.62", "LU": "18.16", "BE": "18.78", "NL": "18.78", "FR": "28.39"},
+                       7: {"DE": "0.00", "AT": "28.57", "LU": "27.86", "BE": "28.81", "NL": "28.81", "FR": "41.29"}},
+             "skus": {"T4": 4, "T7": 7}}
+
+
+def test_ribeco_free_shipping_rule_follows_discount_limits():
+    from decimal import Decimal
+    v = build_feed.shipping_values_for("RIBECO", "T4", "en", _FREE_CFG, Decimal("323.40"))
+    assert v == ["DE:0.00 EUR:0:1:1:2", "AT:0.00 EUR:0:1:1:2", "BE:0.00 EUR:0:1:1:2", "LU:0.00 EUR:0:1:1:2", "FR:28.39 EUR:0:1:1:2", "NL:0.00 EUR:0:1:1:2"]
+    # rates above EUR 25 (tier 7) stay paid, even for an expensive offer
+    assert build_feed.shipping_values_for("RIBECO", "T7", "de", _FREE_CFG, Decimal("679.00")) == ["DE:0.00 EUR:0:1:1:2", "AT:28.57 EUR:0:1:1:2", "LU:27.86 EUR:0:1:1:2"]
+    # below the threshold or unknown price: unchanged
+    assert build_feed.shipping_values_for("RIBECO", "T4", "de", _FREE_CFG, Decimal("74.99"))[1] == "AT:18.62 EUR:0:1:1:2"
+    assert build_feed.shipping_values_for("RIBECO", "T4", "de", _FREE_CFG)[1] == "AT:18.62 EUR:0:1:1:2"
+    assert build_feed.shipping_values_for("RIBECO", "T4", "de", _FREE_CFG, Decimal("75"))[1] == "AT:0.00 EUR:0:1:1:2"
+
+
+def test_effective_price_of_prefers_sale_price():
+    from decimal import Decimal
+    assert build_feed.effective_price_of({"price": "539.00 EUR", "sale_price": "323.40 EUR"}) == Decimal("323.40")
+    assert build_feed.effective_price_of({"price": "539.00 EUR", "sale_price": ""}) == Decimal("539.00")
+    assert build_feed.effective_price_of({"price": ""}) is None

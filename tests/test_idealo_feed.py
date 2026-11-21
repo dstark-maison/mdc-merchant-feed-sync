@@ -18,8 +18,14 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+NOW_PLAIN = datetime(2027, 1, 10, 12, 0, tzinfo=ZoneInfo("Europe/Berlin"))  # outside every campaign window: effective price = list price
+NOW_BW = datetime(2026, 11, 25, 12, 0, tzinfo=ZoneInfo("Europe/Berlin"))    # inside Black Week
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+import black_week  # noqa: E402
 import build_feed  # noqa: E402
 import idealo_feed  # noqa: E402
 
@@ -31,8 +37,8 @@ FIXTURE_CSV = Path(__file__).parent / "fixtures" / "sample_products_export.csv"
 # ---------------------------------------------------------------------------
 def test_shipping_cost_for_row_uses_shared_shipping_label():
     # Coco & Cici -> std_10 (build_feed.VENDOR_SHIPPING_LABELS)
-    row = build_feed.ProductRow(brand="Coco & Cici", price_amount="179.95")
-    assert idealo_feed.shipping_cost_for_row(row) == "10.00"
+    row = build_feed.ProductRow(brand="Coco & Cici", price_amount="49.95")
+    assert idealo_feed.shipping_cost_for_row(row, now=NOW_PLAIN) == "10.00"
 
 
 @pytest.mark.parametrize("brand,label,expected", [
@@ -42,16 +48,17 @@ def test_shipping_cost_for_row_uses_shared_shipping_label():
 ])
 def test_shipping_cost_for_row_matches_live_de_checkout_per_label(brand, label, expected):
     # Rates confirmed 2026-09-27 against live DE checkout, one order per label.
-    row = build_feed.ProductRow(brand=brand, price_amount="150.00")
+    row = build_feed.ProductRow(brand=brand, price_amount="50.00")  # below the free-shipping threshold: the label rate shows
     assert build_feed.shipping_label_for(brand) == label
-    assert idealo_feed.shipping_cost_for_row(row) == expected
+    assert idealo_feed.shipping_cost_for_row(row, now=NOW_PLAIN) == expected
 
 
-def test_shipping_cost_for_row_price_is_irrelevant_now():
-    # Unlike the old price tiers, the label alone decides the rate.
+def test_shipping_cost_for_row_label_rate_below_threshold_free_from_it():
+    # The label decides the rate until the offer's effective price reaches the free-shipping threshold (EUR 75), then 0.00.
     row_cheap = build_feed.ProductRow(brand="Coco & Cici", price_amount="10.00")
     row_expensive = build_feed.ProductRow(brand="Coco & Cici", price_amount="5000.00")
-    assert idealo_feed.shipping_cost_for_row(row_cheap) == idealo_feed.shipping_cost_for_row(row_expensive) == "10.00"
+    assert idealo_feed.shipping_cost_for_row(row_cheap, now=NOW_PLAIN) == "10.00"
+    assert idealo_feed.shipping_cost_for_row(row_expensive, now=NOW_PLAIN) == "0.00"
 
 
 def test_shipping_cost_for_row_unmapped_vendor_fails_loudly():
@@ -66,9 +73,9 @@ def test_shipping_cost_for_row_unmapped_vendor_fails_loudly():
 def test_shipping_cost_for_row_vivaraise_uses_std_15_rate():
     # VIVARAISE -> std_15 (build_feed.VENDOR_SHIPPING_LABELS) -> EUR 15.00
     # flat on idealo DE, regardless of price.
-    for price in ("19.90", "50.00", "399.90"):
+    for price in ("19.90", "50.00", "74.99"):
         row = build_feed.ProductRow(brand="VIVARAISE", price_amount=price)
-        assert idealo_feed.shipping_cost_for_row(row) == "15.00"
+        assert idealo_feed.shipping_cost_for_row(row, now=NOW_PLAIN) == "15.00"
 
 
 def test_every_vendor_shipping_label_has_an_idealo_rate():
@@ -230,7 +237,8 @@ def test_run_idealo_pipeline_end_to_end_against_fixture(tmp_path):
         assert "Heimtextilien > Bettwäsche" in body  # its German categoryPath (Type "Bedding")
         assert "bamboo-fitted-sheet-sky-blue-2.jpg;bamboo-fitted-sheet-sky-blue-3.jpg" not in body  # sanity: not comma form
         assert ";" in body  # imageUrls semicolon-joined
-        assert "9.00" in body  # deliveryCosts_dpd for Boomba Bamboo (std_9)
+        written_row = list(csv.DictReader(stats["feed_path"].open(encoding="utf-8")))[0]
+        assert written_row["deliveryCosts_dpd"] == "0.00"  # Boomba (std_9 = 9.00) at EUR 144 -> free from EUR 75
         assert "4-7 Werktage" in body
         assert "working days" not in body
         assert "0.00" in body  # paymentCosts_paypal / paymentCosts_credit_card
@@ -422,24 +430,24 @@ def test_pipeline_does_not_mutate_gmc_link(tmp_path):
 # ---------------------------------------------------------------------------
 def test_salesfever_bulky_rate():
     row = build_feed.ProductRow(brand="SalesFever", price_amount="1716.00")
-    assert idealo_feed.shipping_cost_for_row(row) == "119.00"
+    assert idealo_feed.shipping_cost_for_row(row, now=NOW_PLAIN) == "0.00"
 
 
-def test_salesfever_price_is_irrelevant_to_label():
-    for price in ("356.00", "796.00", "1796.00"):
+def test_salesfever_is_free_at_any_price():
+    for price in ("20.00", "356.00", "796.00", "1796.00"):
         row = build_feed.ProductRow(brand="SalesFever", price_amount=price)
-        assert idealo_feed.shipping_cost_for_row(row) == "119.00"
+        assert idealo_feed.shipping_cost_for_row(row, now=NOW_PLAIN) == "0.00"
 
 
 def test_salesfever_bed_benches_use_small_rate():
     row = build_feed.ProductRow(brand="SalesFever", price_amount="199.00")
-    assert idealo_feed.shipping_cost_for_row(row, product_type="Bed Benches") == "19.90"
+    assert idealo_feed.shipping_cost_for_row(row, product_type="Bed Benches", now=NOW_PLAIN) == "0.00"
 
 
 def test_salesfever_non_bench_types_stay_on_bulky_rate():
     row = build_feed.ProductRow(brand="SalesFever", price_amount="1716.00")
     for product_type in ("Upholstered Beds", "", "Something New"):
-        assert idealo_feed.shipping_cost_for_row(row, product_type=product_type) == "119.00"
+        assert idealo_feed.shipping_cost_for_row(row, product_type=product_type, now=NOW_PLAIN) == "0.00"
 
 
 def test_pipeline_writes_salesfever_bench_small_rate(tmp_path):
@@ -452,7 +460,7 @@ def test_pipeline_writes_salesfever_bench_small_rate(tmp_path):
         {("storage-bed-bench-white-boucle", "369470"): "54827363696973"},
     )
     by_sku = {w["sku"]: w for w in written}
-    assert by_sku["369470"]["deliveryCosts_dpd"] == "19.90"
+    assert by_sku["369470"]["deliveryCosts_dpd"] == "0.00"
 
 
 def test_pipeline_writes_salesfever_shipping_once_published(tmp_path):
@@ -466,7 +474,7 @@ def test_pipeline_writes_salesfever_shipping_once_published(tmp_path):
         {("velvet-shell-bed-140x200-cm", "398722"): "54825795715405"},
     )
     by_sku = {w["sku"]: w for w in written}
-    assert by_sku["398722"]["deliveryCosts_dpd"] == "119.00"
+    assert by_sku["398722"]["deliveryCosts_dpd"] == "0.00"
     assert by_sku["398722"]["url"].endswith("?variant=54825795715405")
     assert by_sku["398722"]["categoryPath"] == "Schlafzimmer > Betten > Polsterbetten"
     assert by_sku["SKU-1"]["deliveryCosts_dpd"] == "10.00"
@@ -579,3 +587,40 @@ def test_in_stock_offers_are_kept(tmp_path):
     row = _pipeline_row("dc", "SKU-1")
     stats, written, report = _run(tmp_path, [row], {"dc": "Duvet Covers"}, {("dc", "SKU-1"): "101"})
     assert len(written) == 1 and stats["out_of_stock"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Free shipping (2026-11-21): SalesFever free (Rose Velvet: DE only = free on idealo.de), other vendors free from an effective
+# price of EUR 75 (after Black Week), RIBECO untouched.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("price,expected", [("74.00", "10.00"), ("74.99", "10.00"), ("75.00", "0.00"), ("76.00", "0.00"), ("85.00", "0.00")])
+def test_free_shipping_threshold_boundary_74_75_76_85(price, expected):
+    row = build_feed.ProductRow(brand="Coco & Cici", handle="plain-throw", title="Plain throw", price_amount=price)
+    assert idealo_feed.shipping_cost_for_row(row, now=NOW_PLAIN) == expected  # Coco & Cici label std_10 = 10.00
+
+
+def test_free_shipping_uses_the_black_week_effective_price():
+    # VIVARAISE -10 %: list 84.00 -> 75.60 in the window (free) but 82.00 -> 73.80 (paid); outside the window list price decides.
+    free = build_feed.ProductRow(brand="VIVARAISE", vendor="VIVARAISE", id="X1", handle="h", title="t", price_amount="84.00")
+    paid = build_feed.ProductRow(brand="VIVARAISE", vendor="VIVARAISE", id="X2", handle="h", title="t", price_amount="82.00")
+    assert black_week.idealo_price(free, NOW_BW) == "75.60"
+    assert idealo_feed.shipping_cost_for_row(free, now=NOW_BW) == "0.00"
+    assert black_week.idealo_price(paid, NOW_BW) == "73.80"
+    assert idealo_feed.shipping_cost_for_row(paid, now=NOW_BW) == "15.00"
+    assert black_week.idealo_price(paid, NOW_PLAIN) == "82.00"
+    assert idealo_feed.shipping_cost_for_row(paid, now=NOW_PLAIN) == "0.00"  # 82.00 list price outside the window
+
+
+def test_rose_velvet_sku_gets_its_own_label_and_is_free_on_idealo():
+    row = build_feed.ProductRow(brand="SalesFever", vendor="SalesFever", id="396995", price_amount="436.00")
+    assert build_feed.shipping_label_for("SalesFever", "Upholstered Beds", "396995") == "sf_rose"
+    assert idealo_feed.shipping_cost_for_row(row, product_type="Upholstered Beds", now=NOW_PLAIN) == "0.00"
+    other = build_feed.ProductRow(brand="SalesFever", vendor="SalesFever", id="396988", price_amount="596.00")
+    assert build_feed.shipping_label_for("SalesFever", "Upholstered Beds", "396988") == "sf_bulky"
+
+
+def test_ribeco_idealo_shipping_is_unchanged():
+    # RIBECO keeps its own DE-free rate (label "ribeco"), whatever the price.
+    for price in ("30.00", "74.00", "323.40"):
+        row = build_feed.ProductRow(brand="RIBECO", vendor="RIBECO", id="6192972677", price_amount=price)
+        assert idealo_feed.shipping_cost_for_row(row, now=NOW_PLAIN) == "0.00"

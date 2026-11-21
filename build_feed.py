@@ -50,6 +50,7 @@ import re
 import sys
 from functools import lru_cache
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from urllib.parse import quote
 
@@ -155,12 +156,24 @@ DEFAULT_SHIPPING_LABEL = "std_default"
 # the SALESFEVER_RATES-equivalent GMC service, not just here.
 SALESFEVER_SMALL_TYPES = {"Bed Benches"}
 
+# Free shipping (2026-11-21): every SalesFever offer ships free (Shopify profiles "SalesFever - Bulky/Small" = EUR 0 in all zones),
+# except Upholstered Bed Rose Velvet 90x200, which has its own Shopify profile (DE EUR 0, AT/BE/FR/LU/NL EUR 239) and therefore its
+# own label `sf_rose`. Identified by variant SKU (the feed row id / mpn), like the RIBECO table.
+SALESFEVER_ROSE_SKUS = {"396995"}
 
-def shipping_label_for(vendor, product_type=""):
+# Cart threshold of the automatic Shopify discount "Versandkostenfrei ab 75 EUR" (shipping rates over EUR 25 excluded) = theme setting
+# cart_free_shipping_threshold. A single-offer order (idealo) is free when the offer's EFFECTIVE price (after Black Week) reaches it.
+FREE_SHIPPING_THRESHOLD = Decimal("75")
+FREE_SHIPPING_MAX_RATE = Decimal("25")  # the discount excludes shipping rates above this (maximumShippingPrice)
+
+
+def shipping_label_for(vendor, product_type="", sku=""):
     """Merchant Center shipping_label for a product; unmapped vendors get
     DEFAULT_SHIPPING_LABEL so no product is ever unlabelled."""
     vendor = (vendor or "").strip()
     if vendor == "SalesFever":
+        if str(sku or "").strip() in SALESFEVER_ROSE_SKUS:
+            return "sf_rose"
         return "sf_small" if (product_type or "").strip() in SALESFEVER_SMALL_TYPES else "sf_bulky"
     return VENDOR_SHIPPING_LABELS.get(vendor, DEFAULT_SHIPPING_LABEL)
 
@@ -190,9 +203,24 @@ def load_ribeco_shipping(path=None):
     return cfg
 
 
-def shipping_values_for(vendor, sku, market, cfg=None):
+def effective_price_of(row):
+    """Decimal effective price of a feed row: sale_price (Black Week) if set, else the regular price; None when unusable."""
+    for key in ("sale_price", "price"):
+        raw = str(row.get(key) or "").split(" ")[0].strip()
+        if raw:
+            try:
+                return Decimal(raw)
+            except Exception:
+                return None
+    return None
+
+
+def shipping_values_for(vendor, sku, market, cfg=None, effective_price=None):
     """List of `shipping` cell values (one per country of the market) for a RIBECO offer, [] for every other vendor.
-    A RIBECO SKU that is not in the table raises: a wrong or missing shipping price is never guessed."""
+    A RIBECO SKU that is not in the table raises: a wrong or missing shipping price is never guessed.
+    Free shipping (2026-11-21): when the offer's effective price (sale_price if any, else price) reaches FREE_SHIPPING_THRESHOLD, every
+    country whose tier rate is at most FREE_SHIPPING_MAX_RATE is sent as 0.00 -- exactly what the automatic discount gives at checkout;
+    higher rates (e.g. FR tiers 4-7) stay as they are."""
     if (vendor or "").strip() != "RIBECO":
         return []
     cfg = cfg or load_ribeco_shipping()
@@ -203,7 +231,10 @@ def shipping_values_for(vendor, sku, market, cfg=None):
     out = []
     for country in MARKETS[market]["countries"]:
         code = SHIPPING_COUNTRY_CODES[country]
-        out.append(f"{code}:{cfg['rates'][tier][code]} EUR:{h[0]}:{h[1]}:{t[0]}:{t[1]}")
+        rate = str(cfg['rates'][tier][code])
+        if effective_price is not None and effective_price >= FREE_SHIPPING_THRESHOLD and Decimal(rate) <= FREE_SHIPPING_MAX_RATE:
+            rate = "0.00"
+        out.append(f"{code}:{rate} EUR:{h[0]}:{h[1]}:{t[0]}:{t[1]}")
     return out
 
 
@@ -907,7 +938,7 @@ def load_products_from_csv(path):
             # present) -- left blank for CSV-sourced rows rather than guessed.
             # The shopify-api adapter is the source of truth for material.
             material="",
-            shipping_label=shipping_label_for(base["vendor"], base["product_type"]),
+            shipping_label=shipping_label_for(base["vendor"], base["product_type"], sku),
             # CSV export carries no metafields, so this is always the
             # product_type fallback for CSV-sourced rows -- the shopify-api
             # adapter is the source of truth for a real per-variant value.
@@ -1125,7 +1156,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                     option_color=option_color,
                     size=size,
                     material=material,
-                    shipping_label=shipping_label_for(vendor, product_type),
+                    shipping_label=shipping_label_for(vendor, product_type, sku),
                     translation_missing=translation_missing,
                     gender=gender,
                     age_group=age_group,
@@ -1208,7 +1239,7 @@ def run_pipeline(rows, out_basename, run_label, market="de", now=None):
     shipping_cfg = load_ribeco_shipping() if any((r.get("vendor") or "").strip() == "RIBECO" for r in accepted) else None
     n_ship = 0
     for row in accepted:
-        vals = shipping_values_for(row.get("vendor"), row.get("id"), market, shipping_cfg)
+        vals = shipping_values_for(row.get("vendor"), row.get("id"), market, shipping_cfg, effective_price_of(row))
         for i, v in enumerate(vals):
             row[f"_shipping{i}"] = v
         n_ship = max(n_ship, len(vals))
