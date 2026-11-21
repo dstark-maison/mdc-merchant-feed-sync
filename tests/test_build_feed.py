@@ -1279,3 +1279,18 @@ def test_ribeco_shipping_file_is_valid_and_germany_is_free():
     cfg = build_feed.load_ribeco_shipping()
     assert len(cfg["skus"]) == 51
     assert all(r["DE"] == "0.00" for r in cfg["rates"].values())
+
+
+def test_ribeco_gel_foam_topper_uses_tiers_8_9_10():
+    # Lasse's DPD table (customer prices incl. VAT): AT/BE/NL/LU flat, FR own price, Germany free. Topper only; every other RIBECO SKU stays on Tier 1-7.
+    cfg = build_feed.load_ribeco_shipping()
+    want = {8: ("7.99", "12.99"), 9: ("8.99", "16.99"), 10: ("10.99", "20.99")}
+    for t, (flat, fr) in want.items():
+        assert cfg["rates"][t] == {"AT": flat, "BE": flat, "NL": flat, "LU": flat, "FR": fr, "DE": "0.00"}
+    topper = {"6192972763": 8, "6192972764": 8, "6192972765": 9, "6192971285": 9, "6192971282": 9, "6192971283": 9,
+              "6192972134": 9, "6192972135": 9, "6192972136": 10}
+    assert {s: cfg["skus"][s] for s in topper} == topper
+    assert sorted(s for s, t in cfg["skus"].items() if t >= 8) == sorted(topper)
+    assert build_feed.shipping_values_for("RIBECO", "6192972763", "de", cfg) == ["DE:0.00 EUR:0:1:1:2", "AT:7.99 EUR:0:1:1:2", "LU:7.99 EUR:0:1:1:2"]
+    assert build_feed.shipping_values_for("RIBECO", "6192972136", "be-fr", cfg) == ["BE:10.99 EUR:0:1:1:2", "FR:20.99 EUR:0:1:1:2", "LU:10.99 EUR:0:1:1:2"]
+    assert build_feed.shipping_values_for("RIBECO", "6192972765", "be-nl", cfg) == ["BE:8.99 EUR:0:1:1:2", "NL:8.99 EUR:0:1:1:2"]
