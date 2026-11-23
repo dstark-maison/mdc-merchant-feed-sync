@@ -31,14 +31,15 @@ on:
         default: false
   # build-idealo-feed.yml starts automatically when this workflow succeeds (workflow_run).
 
-# Shared with build-idealo-feed.yml so the two never commit+push to master at
+# Shared with every workflow that pushes to master (build-idealo-feed.yml) so the two never commit+push to master at
 # the same time -- without this, a manual dispatch of both (or a slow run
 # overlapping the next day's schedule) can have one workflow's push rejected
 # because the other landed first, even though its own feed build succeeded.
 concurrency:
   # A dry run gets a unique group (it never pushes, so it needs no serialisation) so it can neither queue behind
-  # nor replace a pending live build. Non-dry runs keep the exact shared group name.
-  group: merchant-feed-sync-repo-push${{ inputs.dry_run && format('-dry-run-{0}', github.run_id) || '' }}
+  # nor replace a pending live build. Non-dry runs share the group "master-writers" with every other master pusher.
+  group: master-writers${{ inputs.dry_run && format('-dry-run-{0}', github.run_id) || '' }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -96,21 +97,40 @@ jobs:
       - name: Commit feed, exclusions log, and report back to repo
         # Skipped on a dry run. `inputs` is empty for dispatch/schedule events, so this stays true for them.
         if: always() && inputs.dry_run != true
+        env:
+          SHOPIFY_STORE_DOMAIN: ${{ secrets.SHOPIFY_STORE_DOMAIN }}
+          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
+          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
+          MSG: Feed build ${{ github.run_id }}
         run: |
           git config user.name "merchant-feed-sync-bot"
           git config user.email "actions@users.noreply.github.com"
           git add data/ reports/
           git diff --staged --quiet && exit 0
-          git commit -m "Feed build ${{ github.run_id }}"
-          # Belt-and-braces alongside the concurrency group above: retry with
-          # a rebase onto whatever landed on master in between, in case of a
-          # push from outside this workflow pair (e.g. a manual commit).
+          git commit -m "$MSG"
+          # master moved while we were building: never rebase/merge generated files. Reset to the latest
+          # master, rebuild from scratch, commit again and retry (max 5 attempts).
           for attempt in 1 2 3 4 5; do
             if git push; then
               exit 0
             fi
-            echo "Push rejected (attempt $attempt/5) -- rebasing onto latest master and retrying"
-            git pull --rebase
+            echo "Push rejected (attempt $attempt/5) -- resetting to origin/master and rebuilding"
+            sleep 10
+            git fetch origin master
+            git reset --hard origin/master
+            python build_feed.py --source shopify-api --out google_merchant_feed
+            python build_feed.py --source shopify-api --market be-fr --out google_merchant_feed_be_fr
+            python build_feed.py --source shopify-api --market be-nl --out google_merchant_feed_be_nl
+            python build_feed.py --source shopify-api --market en --out google_merchant_feed_en
+            git add data/ reports/
+            if git diff --staged --quiet; then
+              echo "Nothing changed after rebuild on latest master"
+              exit 0
+            fi
+            git commit -m "$MSG"
           done
-          echo "::error::git push failed after 5 rebase+retry attempts"
+          if git push; then
+            exit 0
+          fi
+          echo "::error::git push failed after 5 reset+rebuild attempts"
           exit 1
