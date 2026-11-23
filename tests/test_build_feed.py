@@ -1334,3 +1334,8 @@ def test_effective_price_of_prefers_sale_price():
     assert build_feed.effective_price_of({"price": "539.00 EUR", "sale_price": "323.40 EUR"}) == Decimal("323.40")
     assert build_feed.effective_price_of({"price": "539.00 EUR", "sale_price": ""}) == Decimal("539.00")
     assert build_feed.effective_price_of({"price": ""}) is None
+
+
+def test_outlet_handles_excluded_from_feeds():
+    assert build_feed.manual_exclusion_reason({"handle": "x-outlet", "link": "", "size": ""}, rules=())
+    assert not build_feed.manual_exclusion_reason({"handle": "x", "link": "", "size": ""}, rules=())
