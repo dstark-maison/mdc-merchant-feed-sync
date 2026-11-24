@@ -374,6 +374,8 @@ def manual_exclusion_reason(row, rules=None):
     duplicates share their SKU with the legitimate product."""
     rules = load_feed_exclusions() if rules is None else rules
     handle = str(row.get("handle") or "")
+    if handle.endswith("-outlet"):  # outlet clones (mdc-ops/outlet): never in GMC or idealo (owner spec 2026-11-23)
+        return "outlet product (handle ends -outlet): excluded from GMC and idealo"
     m = _VARIANT_IN_LINK.search(str(row.get("link") or ""))
     variant_id = m.group(1) if m else ""
     size = _norm_size(row.get("size"))
