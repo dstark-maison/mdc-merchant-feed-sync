@@ -31,7 +31,7 @@ def test_quoted_model_name_follows_size_and_title_size_moves():
 
 def test_variant_size_wins_and_mismatch_is_flagged():
     new, flags = t("Woll-Decke „Hunter“ 140 x 200", "MoST Blankets", "MoST Blankets", "200 x 220 cm")
-    assert new == "Wolldecke 140x200 „Hunter“ – MoST Blankets" and flags == ["size-mismatch:variant=200x220"]
+    assert new == "Wolldecke 200x220 „Hunter“ – MoST Blankets" and flags == ["size-mismatch:title=140x200"]
 
 
 def test_salesfever_no_suffix_and_comma_split():
