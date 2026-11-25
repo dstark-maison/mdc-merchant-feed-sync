@@ -370,16 +370,6 @@ item_id,brand,old_title,new_title,changed,applied,flag
 6154511142170,Boomba Bamboo,"Boomba Bamboo Kissenbezüge aus Bambus, „Moosgrün“, 400TC – 2er-Set","Boomba Bamboo Kissenbezüge aus Bambus, „Moosgrün“, 400TC – 2er-Set",n,n,held-boomba
 6154511221240,Boomba Bamboo,"Boomba Bamboo Kissenbezüge aus Bambus, „Moosgrün“, 400TC – 2er-Set","Boomba Bamboo Kissenbezüge aus Bambus, „Moosgrün“, 400TC – 2er-Set",n,n,held-boomba
 721301802,Coco & Cici,Coco & Cici Alpaka-Merinowolle-Decke,Alpaka-Merinowolle-Decke – Coco & Cici,y,n,no-size
-B11402006VS,Coco & Cici,Coco & Cici Bambusviskose-Bettbezug in der Farbe „Powder Peach“,Bambusviskose-Bettbezug in der Farbe 140x200 „Powder Peach“ – Coco & Cici,y,n,size-option-extra:140x200 + 1 pillowcase 60x70
-B11402206VS,Coco & Cici,Coco & Cici Bambusviskose-Bettbezug in der Farbe „Powder Peach“,Bambusviskose-Bettbezug in der Farbe 140x220 „Powder Peach“ – Coco & Cici,y,n,size-option-extra:140x220 + 1 pillowcase 60x70
-B12002006VS,Coco & Cici,Coco & Cici Bambusviskose-Bettbezug in der Farbe „Powder Peach“,Bambusviskose-Bettbezug in der Farbe 200x200 „Powder Peach“ – Coco & Cici,y,n,size-option-extra:200x200 + 2 pillowcases 60x70
-B12002206VS,Coco & Cici,Coco & Cici Bambusviskose-Bettbezug in der Farbe „Powder Peach“,Bambusviskose-Bettbezug in der Farbe 200x220 „Powder Peach“ – Coco & Cici,y,n,size-option-extra:200x220 + 2 pillowcases 60x70
-B12402206VS,Coco & Cici,Coco & Cici Bambusviskose-Bettbezug in der Farbe „Powder Peach“,Bambusviskose-Bettbezug in der Farbe 240x220 „Powder Peach“ – Coco & Cici,y,n,size-option-extra:240x220 + 2 pillowcases 60x70
-B12602206VS,Coco & Cici,Coco & Cici Bambusviskose-Bettbezug in der Farbe „Powder Peach“,Bambusviskose-Bettbezug in der Farbe 260x220 „Powder Peach“ – Coco & Cici,y,n,size-option-extra:260x220 + 2 pillowcases 60x70
-B2507526,Coco & Cici,Coco & Cici Bambusviskose-Kissenbezug Powder Peach,Bambusviskose-Kissenbezug Powder Peach 50x75 – Coco & Cici,y,n,size-option-extra:50x75 zonder volant
-B2607026,Coco & Cici,Coco & Cici Bambusviskose-Kissenbezug Powder Peach,Bambusviskose-Kissenbezug Powder Peach 60x70 – Coco & Cici,y,n,size-option-extra:60x70 zonder volant
-B12402204,Coco & Cici,"Coco & Cici Bettbezug aus Bambus, Ozeanblau",Bettbezug aus Bambus 240x220 Ozeanblau – Coco & Cici,y,n,size-option-extra:240x220 + 2 pillowcases 60x70
-B12602204,Coco & Cici,"Coco & Cici Bettbezug aus Bambus, Ozeanblau",Bettbezug aus Bambus 260x220 Ozeanblau – Coco & Cici,y,n,size-option-extra:260x220 + 2 pillowcases 60x70
 SWS1420VS,Coco & Cici,"Coco & Cici Bettbezug aus Tencel™-Satin, Farbe „White Sand“",Bettbezug aus Tencel™-Satin 140x200 Farbe „White Sand“ – Coco & Cici,y,n,size-option-extra:Pre-order: 140x200 + 1 pillowcase 60x70 (available December 10)
 SWS1422VS,Coco & Cici,"Coco & Cici Bettbezug aus Tencel™-Satin, Farbe „White Sand“",Bettbezug aus Tencel™-Satin 140x220 Farbe „White Sand“ – Coco & Cici,y,n,size-option-extra:140x220 + 1 pillowcase 60x70
 SWS2020VS,Coco & Cici,"Coco & Cici Bettbezug aus Tencel™-Satin, Farbe „White Sand“",Bettbezug aus Tencel™-Satin 200x200 Farbe „White Sand“ – Coco & Cici,y,n,size-option-extra:Pre-order: 200x200 + 2 pillowcases 60x70 (available December 10)
@@ -441,7 +431,8 @@ M12002008VS,Coco & Cici,"Coco & Cici Bettbezug aus Tencel™-Twill, olivgrün",B
 M12002208VS,Coco & Cici,"Coco & Cici Bettbezug aus Tencel™-Twill, olivgrün",Bettbezug aus Tencel™-Twill 200x220 olivgrün – Coco & Cici,y,n,size-option-extra:200x220 + 2 pillowcases 60x70
 M12402208VS,Coco & Cici,"Coco & Cici Bettbezug aus Tencel™-Twill, olivgrün",Bettbezug aus Tencel™-Twill 240x220 olivgrün – Coco & Cici,y,n,size-option-extra:Pre-order: 240x220 + 2 pillowcases 60x70 (available December 10)
 M12602208VS,Coco & Cici,"Coco & Cici Bettbezug aus Tencel™-Twill, olivgrün",Bettbezug aus Tencel™-Twill 260x220 olivgrün – Coco & Cici,y,n,size-option-extra:260x220 + 2 pillowcases 60x70
-B280803,Coco & Cici,"Coco & Cici Kissenbezug aus Bambus, ockergelb",Kissenbezug aus Bambus ockergelb – Coco & Cici,y,n,no-size
+B12402204,Coco & Cici,"Coco & Cici Bettbezug aus Viskose, Ozeanblau",Bettbezug aus Viskose 240x220 Ozeanblau – Coco & Cici,y,n,size-option-extra:240x220 + 2 pillowcases 60x70
+B12602204,Coco & Cici,"Coco & Cici Bettbezug aus Viskose, Ozeanblau",Bettbezug aus Viskose 260x220 Ozeanblau – Coco & Cici,y,n,size-option-extra:260x220 + 2 pillowcases 60x70
 2507024,Coco & Cici,"Coco & Cici Kissenbezug aus Tencel™-Satin, Taupe",Kissenbezug aus Tencel™-Satin 50x70 Taupe – Coco & Cici,y,n,size-option-extra:50x70 without valance
 2507524,Coco & Cici,"Coco & Cici Kissenbezug aus Tencel™-Satin, Taupe",Kissenbezug aus Tencel™-Satin 50x75 Taupe – Coco & Cici,y,n,size-option-extra:50x75 without Volant
 2607024,Coco & Cici,"Coco & Cici Kissenbezug aus Tencel™-Satin, Taupe",Kissenbezug aus Tencel™-Satin 60x70 Taupe – Coco & Cici,y,n,size-option-extra:60x70 without valance
@@ -468,6 +459,7 @@ M2607028,Coco & Cici,"Coco & Cici Kissenbezug aus Tencel™-Twill, olivgrün",Ki
 M2507027,Coco & Cici,"Coco & Cici Kissenbezug aus Tencel™-Twill, weiß",Kissenbezug aus Tencel™-Twill 50x70 weiß – Coco & Cici,y,n,size-option-extra:50x70 without valance
 M2507527,Coco & Cici,"Coco & Cici Kissenbezug aus Tencel™-Twill, weiß",Kissenbezug aus Tencel™-Twill 50x75 weiß – Coco & Cici,y,n,size-option-extra:50x75 without Volant
 M2607027,Coco & Cici,"Coco & Cici Kissenbezug aus Tencel™-Twill, weiß",Kissenbezug aus Tencel™-Twill 60x70 weiß – Coco & Cici,y,n,size-option-extra:60x70 without valance
+B280803,Coco & Cici,"Coco & Cici Kissenbezug aus Viskose, ockergelb",Kissenbezug aus Viskose ockergelb – Coco & Cici,y,n,no-size
 TMNDEL08,Coco & Cici,Coco & Cici TENCEL™ Nachthemd Damen Dunkelblau,TENCEL™ Nachthemd Damen Dunkelblau – Coco & Cici,y,n,size-not-dimension:XL/XXL;no-size
 TMNDL08,Coco & Cici,Coco & Cici TENCEL™ Nachthemd Damen Dunkelblau,TENCEL™ Nachthemd Damen Dunkelblau – Coco & Cici,y,n,size-not-dimension:L/XL;no-size
 TMNDM08,Coco & Cici,Coco & Cici TENCEL™ Nachthemd Damen Dunkelblau,TENCEL™ Nachthemd Damen Dunkelblau – Coco & Cici,y,n,size-not-dimension:M/L;no-size
@@ -494,20 +486,14 @@ TMPSETM02,Coco & Cici,Coco & Cici TENCEL™ Pyjama-Set lang Damen Powder Peach,T
 TMPSETS02,Coco & Cici,Coco & Cici TENCEL™ Pyjama-Set lang Damen Powder Peach,TENCEL™ Pyjama-Set lang Damen Powder Peach – Coco & Cici,y,n,size-not-dimension:S;no-size
 SSM06,Coco & Cici,Coco & Cici TENCEL™ Satin-Schlafmaske Graugrün S/M,TENCEL™ Satin-Schlafmaske Graugrün S/M – Coco & Cici,y,n,no-size
 SSM01,Coco & Cici,Coco & Cici TENCEL™ Satin-Schlafmaske Weiß S/M,TENCEL™ Satin-Schlafmaske Weiß S/M – Coco & Cici,y,n,no-size
-B240805,Coco & Cici,Coco & Cici Bambusviskose-Kissenbezug Hazel,Bambusviskose-Kissenbezug Hazel 40x80 – Coco & Cici,y,n,
-B250605,Coco & Cici,Coco & Cici Bambusviskose-Kissenbezug Hazel,Bambusviskose-Kissenbezug Hazel 50x60 – Coco & Cici,y,n,
-B250755,Coco & Cici,Coco & Cici Bambusviskose-Kissenbezug Hazel,Bambusviskose-Kissenbezug Hazel 50x75 – Coco & Cici,y,n,
-B250905,Coco & Cici,Coco & Cici Bambusviskose-Kissenbezug Hazel,Bambusviskose-Kissenbezug Hazel 50x90 – Coco & Cici,y,n,
-B260705,Coco & Cici,Coco & Cici Bambusviskose-Kissenbezug Hazel,Bambusviskose-Kissenbezug Hazel 60x70 – Coco & Cici,y,n,
-B265655,Coco & Cici,Coco & Cici Bambusviskose-Kissenbezug Hazel,Bambusviskose-Kissenbezug Hazel 65x65 – Coco & Cici,y,n,
-B280805,Coco & Cici,Coco & Cici Bambusviskose-Kissenbezug Hazel,Bambusviskose-Kissenbezug Hazel 80x80 – Coco & Cici,y,n,
-B240806,Coco & Cici,Coco & Cici Bambusviskose-Kissenbezug Powder Peach,Bambusviskose-Kissenbezug Powder Peach 40x80 – Coco & Cici,y,n,
-B250606,Coco & Cici,Coco & Cici Bambusviskose-Kissenbezug Powder Peach,Bambusviskose-Kissenbezug Powder Peach 50x60 – Coco & Cici,y,n,
-B250756,Coco & Cici,Coco & Cici Bambusviskose-Kissenbezug Powder Peach,Bambusviskose-Kissenbezug Powder Peach 50x75 – Coco & Cici,y,n,
-B250906,Coco & Cici,Coco & Cici Bambusviskose-Kissenbezug Powder Peach,Bambusviskose-Kissenbezug Powder Peach 50x90 – Coco & Cici,y,n,
-B260706,Coco & Cici,Coco & Cici Bambusviskose-Kissenbezug Powder Peach,Bambusviskose-Kissenbezug Powder Peach 60x70 – Coco & Cici,y,n,
-B265656,Coco & Cici,Coco & Cici Bambusviskose-Kissenbezug Powder Peach,Bambusviskose-Kissenbezug Powder Peach 65x65 – Coco & Cici,y,n,
-B280806,Coco & Cici,Coco & Cici Bambusviskose-Kissenbezug Powder Peach,Bambusviskose-Kissenbezug Powder Peach 80x80 – Coco & Cici,y,n,
+B11402006VS,Coco & Cici,Coco & Cici Viskose-Bettbezug in der Farbe „Powder Peach“,Viskose-Bettbezug in der Farbe 140x200 „Powder Peach“ – Coco & Cici,y,n,size-option-extra:140x200 + 1 pillowcase 60x70
+B11402206VS,Coco & Cici,Coco & Cici Viskose-Bettbezug in der Farbe „Powder Peach“,Viskose-Bettbezug in der Farbe 140x220 „Powder Peach“ – Coco & Cici,y,n,size-option-extra:140x220 + 1 pillowcase 60x70
+B12002006VS,Coco & Cici,Coco & Cici Viskose-Bettbezug in der Farbe „Powder Peach“,Viskose-Bettbezug in der Farbe 200x200 „Powder Peach“ – Coco & Cici,y,n,size-option-extra:200x200 + 2 pillowcases 60x70
+B12002206VS,Coco & Cici,Coco & Cici Viskose-Bettbezug in der Farbe „Powder Peach“,Viskose-Bettbezug in der Farbe 200x220 „Powder Peach“ – Coco & Cici,y,n,size-option-extra:200x220 + 2 pillowcases 60x70
+B12402206VS,Coco & Cici,Coco & Cici Viskose-Bettbezug in der Farbe „Powder Peach“,Viskose-Bettbezug in der Farbe 240x220 „Powder Peach“ – Coco & Cici,y,n,size-option-extra:240x220 + 2 pillowcases 60x70
+B12602206VS,Coco & Cici,Coco & Cici Viskose-Bettbezug in der Farbe „Powder Peach“,Viskose-Bettbezug in der Farbe 260x220 „Powder Peach“ – Coco & Cici,y,n,size-option-extra:260x220 + 2 pillowcases 60x70
+B2507526,Coco & Cici,Coco & Cici Viskose-Kissenbezug Powder Peach,Viskose-Kissenbezug Powder Peach 50x75 – Coco & Cici,y,n,size-option-extra:50x75 zonder volant
+B2607026,Coco & Cici,Coco & Cici Viskose-Kissenbezug Powder Peach,Viskose-Kissenbezug Powder Peach 60x70 – Coco & Cici,y,n,size-option-extra:60x70 zonder volant
 240807,Coco & Cici,Coco & Cici Kissenbezug aus Tencel™-Satin in Terra Pink,Kissenbezug aus Tencel™-Satin in Terra Pink 40x80 – Coco & Cici,y,n,
 280807,Coco & Cici,Coco & Cici Kissenbezug aus Tencel™-Satin in Terra Pink,Kissenbezug aus Tencel™-Satin in Terra Pink 80x80 – Coco & Cici,y,n,
 240804,Coco & Cici,"Coco & Cici Kissenbezug aus Tencel™-Satin, Taupe",Kissenbezug aus Tencel™-Satin 40x80 Taupe – Coco & Cici,y,n,
@@ -579,6 +565,20 @@ M280807,Coco & Cici,"Coco & Cici Kissenbezug aus Tencel™-Twill, weiß",Kissenb
 4200220AS,Coco & Cici,Coco & Cici Tencel™ Vier-Jahreszeiten-Bettdecke,Tencel™ Vier-Jahreszeiten-Bettdecke 200x220 – Coco & Cici,y,n,
 4240220AS,Coco & Cici,Coco & Cici Tencel™ Vier-Jahreszeiten-Bettdecke,Tencel™ Vier-Jahreszeiten-Bettdecke 240x220 – Coco & Cici,y,n,
 4260220AS,Coco & Cici,Coco & Cici Tencel™ Vier-Jahreszeiten-Bettdecke,Tencel™ Vier-Jahreszeiten-Bettdecke 260x220 – Coco & Cici,y,n,
+B240805,Coco & Cici,Coco & Cici Viskose-Kissenbezug Hazel,Viskose-Kissenbezug Hazel 40x80 – Coco & Cici,y,n,
+B250605,Coco & Cici,Coco & Cici Viskose-Kissenbezug Hazel,Viskose-Kissenbezug Hazel 50x60 – Coco & Cici,y,n,
+B250755,Coco & Cici,Coco & Cici Viskose-Kissenbezug Hazel,Viskose-Kissenbezug Hazel 50x75 – Coco & Cici,y,n,
+B250905,Coco & Cici,Coco & Cici Viskose-Kissenbezug Hazel,Viskose-Kissenbezug Hazel 50x90 – Coco & Cici,y,n,
+B260705,Coco & Cici,Coco & Cici Viskose-Kissenbezug Hazel,Viskose-Kissenbezug Hazel 60x70 – Coco & Cici,y,n,
+B265655,Coco & Cici,Coco & Cici Viskose-Kissenbezug Hazel,Viskose-Kissenbezug Hazel 65x65 – Coco & Cici,y,n,
+B280805,Coco & Cici,Coco & Cici Viskose-Kissenbezug Hazel,Viskose-Kissenbezug Hazel 80x80 – Coco & Cici,y,n,
+B240806,Coco & Cici,Coco & Cici Viskose-Kissenbezug Powder Peach,Viskose-Kissenbezug Powder Peach 40x80 – Coco & Cici,y,n,
+B250606,Coco & Cici,Coco & Cici Viskose-Kissenbezug Powder Peach,Viskose-Kissenbezug Powder Peach 50x60 – Coco & Cici,y,n,
+B250756,Coco & Cici,Coco & Cici Viskose-Kissenbezug Powder Peach,Viskose-Kissenbezug Powder Peach 50x75 – Coco & Cici,y,n,
+B250906,Coco & Cici,Coco & Cici Viskose-Kissenbezug Powder Peach,Viskose-Kissenbezug Powder Peach 50x90 – Coco & Cici,y,n,
+B260706,Coco & Cici,Coco & Cici Viskose-Kissenbezug Powder Peach,Viskose-Kissenbezug Powder Peach 60x70 – Coco & Cici,y,n,
+B265656,Coco & Cici,Coco & Cici Viskose-Kissenbezug Powder Peach,Viskose-Kissenbezug Powder Peach 65x65 – Coco & Cici,y,n,
+B280806,Coco & Cici,Coco & Cici Viskose-Kissenbezug Powder Peach,Viskose-Kissenbezug Powder Peach 80x80 – Coco & Cici,y,n,
 8720849140447-copy,MoST Blankets,"MoST Blankets Merino-Woll-Decke „Aegean“, 140 × 200",Merino-Wolldecke 200x220 „Aegean“ – MoST Blankets,y,y,size-mismatch:title=140x200
 0793002340679-copy,MoST Blankets,MoST Blankets Woll-Decke „Cool Mint“ 140 × 200,Wolldecke 200x220 „Cool Mint“ – MoST Blankets,y,y,size-mismatch:title=140x200
 8720849140560,MoST Blankets,MoST Blankets Woll-Decke „Hunter“ 140 x 200,Wolldecke 200x220 „Hunter“ – MoST Blankets,y,y,size-mismatch:title=140x200
