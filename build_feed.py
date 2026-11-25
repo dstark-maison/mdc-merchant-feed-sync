@@ -58,6 +58,7 @@ import requests
 import yaml
 
 import black_week
+import title_override
 
 ROOT = Path(__file__).parent
 DATA_DIR = ROOT / "data"
@@ -861,8 +862,9 @@ def _option_value_containing(names_to_values, substring):
     shopify-api adapter, which gets its options as a dict rather than
     Option<N> Name/Value CSV columns."""
     substring = substring.strip().lower()
+    needles = title_override.SIZE_OPTION_NAMES if substring == "size" else (substring,)  # German option names too
     for name, value in names_to_values.items():
-        if substring in name:
+        if any(n in name for n in needles):
             return value
     return ""
 
@@ -1157,6 +1159,7 @@ def load_products_from_shopify_api(shop_domain, client_id, client_secret, market
                     color=color,
                     option_color=option_color,
                     size=size,
+                    product_type=product_type,
                     material=material,
                     shipping_label=shipping_label_for(vendor, product_type, sku),
                     translation_missing=translation_missing,
@@ -1186,6 +1189,7 @@ def run_pipeline(rows, out_basename, run_label, market="de", now=None):
     accepted, excluded, sample_rejected, empty_description, missing_translation = [], [], [], [], []
 
     unknown_vendors = {}  # vendor -> offer count, flagged in the report
+    title_records = []  # DE title override audit rows (reports/title_override_de.csv)
     for raw_row in rows:
         # Sample-data guard runs on the RAW row so a vendor literally named
         # "Google" is still caught before the mapping rewrites brand.
@@ -1194,6 +1198,16 @@ def run_pipeline(rows, out_basename, run_label, market="de", now=None):
             sample_rejected.append((raw_row, sample_reason))
             continue
         row, is_unknown = apply_brand_mapping(raw_row)
+        if market == "de":  # feed-only DE title override (title_override.py); also serves AT
+            new_title, t_flags = title_override.build_title(
+                raw_row.get("title", ""), row.get("title", ""), row.get("vendor", ""), row.get("brand", ""),
+                raw_row.get("size", ""), raw_row.get("product_type", ""))
+            title_records.append({"item_id": row.get("id", ""), "brand": row.get("brand", ""),
+                                  "old_title": row.get("title", ""), "new_title": new_title,
+                                  "changed": "y" if new_title != row.get("title", "") else "n",
+                                  "applied": "y" if title_override.applies_to(row.get("vendor")) and new_title != row.get("title", "") else "n", "flag": ";".join(t_flags)})
+            if title_override.applies_to(row.get("vendor")):
+                row["title"] = new_title
         if is_unknown:
             label = row["vendor"] or "(empty vendor)"
             unknown_vendors[label] = unknown_vendors.get(label, 0) + 1
@@ -1246,6 +1260,9 @@ def run_pipeline(rows, out_basename, run_label, market="de", now=None):
             row[f"_shipping{i}"] = v
         n_ship = max(n_ship, len(vals))
     columns = FEED_COLUMNS + ([SHIPPING_COLUMN] * n_ship)
+
+    if title_records:
+        title_override.write_report(title_records, REPORTS_DIR / "title_override_de.csv")
 
     feed_csv_path = DATA_DIR / f"{out_basename}.csv"
     feed_txt_path = DATA_DIR / f"{out_basename}.txt"
