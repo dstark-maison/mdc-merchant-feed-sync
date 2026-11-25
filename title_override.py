@@ -32,7 +32,8 @@ def applies_to(vendor):
 
 # "Woll-Decke" -> "Wolldecke" etc. (feed titles only). Exactly these compounds, nothing broader.
 WOLL_COMPOUNDS = (("Woll-Bouclé-Decke", "Wollbouclé-Decke"), ("Woll-Überwurfdecke", "Wollüberwurfdecke"),
-                  ("Woll-Kuscheldecke", "Wollkuscheldecke"), ("Woll-Decke", "Wolldecke"))
+                  ("Woll-Kuscheldecke", "Wollkuscheldecke"), ("Woll-Decke", "Wolldecke"),
+                  ("Woll-Plaid", "Wollplaid"))
 
 MAX_TITLE_LEN = 150
 FRONT_WINDOW = 70
@@ -116,7 +117,10 @@ def build_title(raw_title, current_title, vendor, brand, variant_size, product_t
         flags.append(f"size-option-extra:{variant_size.strip()}")
     size = opt_size or title_size
     if opt_size and title_size and opt_size.replace(",", ".") != title_size.replace(",", "."):
-        flags.append(f"size-mismatch:title={title_size}")
+        # Owner ruling 2026-11-25: do NOT trust the variant size here; the title's size stays as-is until the
+        # product/variant data is sorted out (read-only investigation pending). The row is only reordered.
+        flags.append(f"size-mismatch:variant={opt_size}")
+        size = title_size
     if not size and (product_type or "") not in NO_SIZE_EXEMPT_PRODUCT_TYPES and not height:
         flags.append("no-size")
 

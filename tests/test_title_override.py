@@ -31,7 +31,7 @@ def test_quoted_model_name_follows_size_and_title_size_moves():
 
 def test_variant_size_wins_and_mismatch_is_flagged():
     new, flags = t("Woll-Decke „Hunter“ 140 x 200", "MoST Blankets", "MoST Blankets", "200 x 220 cm")
-    assert new == "Wolldecke 200x220 „Hunter“ – MoST Blankets" and flags == ["size-mismatch:title=140x200"]
+    assert new == "Wolldecke 140x200 „Hunter“ – MoST Blankets" and flags == ["size-mismatch:variant=200x220"]
 
 
 def test_salesfever_no_suffix_and_comma_split():
@@ -84,3 +84,8 @@ def test_boomba_is_held_and_staged_apply():
     assert t("Bettbezug aus Bambus, Soft Taupe, 400TC", "Boomba Bamboo", "Boomba Bamboo", "140×200", cur=cur) == (cur, ["held-boomba"])
     assert to.applies_to("RIBECO") and to.applies_to("MoST Blankets") and to.applies_to("SalesFever")
     assert not any(to.applies_to(v) for v in ("Boomba Bamboo", "VIVARAISE", "Coco & Cici", "Maison de Cocon"))
+
+
+def test_woll_plaid_and_merino_wolldecke():
+    assert t("Woll-Plaid Rio Grau 140×200", "MoST Blankets", "MoST Blankets", "")[0] == "Wollplaid Rio Grau 140x200 – MoST Blankets"
+    assert t("Merino-Woll-Decke „Aegean“", "MoST Blankets", "MoST Blankets", "140×200")[0] == "Merino-Wolldecke 140x200 „Aegean“ – MoST Blankets"
