@@ -15,7 +15,7 @@ from the current time.
 Same rules as the Shopify setup (collections "Black Week 10" / "Black Week 5", automatic discounts, theme snippet
 custom-black-week-pct.liquid). Keep the three in sync:
   -10 %: vendor VIVARAISE, MoST Blankets, SalesFever
-  -5 %:  vendor Coco & Cici, unless the product is "Ocean Blue"
+  -5 %:  vendor Coco & Cici, unless the product is "Ocean Blue" or a Kids product (no 30-day price history, owner ruling 2026-11-25)
 Boomba Bamboo (and everything else) is never discounted.
 
 Christmas 2026 is a second window in the same module: 2026-12-01 00:00 to 2026-12-25 23:59 Europe/Berlin, 5 % for every
@@ -25,12 +25,14 @@ it already announces the Christmas sale. Keep in sync with the "Weihnachten -5%"
 (custom-black-week-pct.liquid, active_campaign "christmas").
 
 Ocean Blue is detected on the title (EN) OR the base handle: in the translated market feeds the title is
-localized (DE "Ozeanblau"), the base handle is not.
+localized (DE "Ozeanblau"), the base handle is not. Kids products are detected the same way (word "kids" in the
+title, or a base handle starting with "kids-"); the theme snippet checks the product tag "Kids" instead.
 
 Rounding matches Shopify (verified 2026-10-26 with draftOrderCalculate on tie prices): the discount amount is
 truncated to the cent, discounted = price - floor(price * pct / 100).
 """
 import csv
+import re
 from datetime import datetime
 from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
@@ -111,11 +113,18 @@ def window_not_over(now=None):
     return _now(now) <= WINDOW_END.replace(second=59)
 
 
+def _is_kids(title, handle):
+    """Kids products (title "Kids ...", handle "kids-...") are not in Black Week 5: no 30-day price history."""
+    return bool(re.search(r"kids", (title or "").lower())) or (handle or "").lower().startswith("kids-")
+
+
 def discount_pct(vendor, title="", handle=""):
     """10, 5 or 0 for a product, by the Black Week rules."""
     pct = PCT_BY_VENDOR.get((vendor or "").strip(), 0)
     if pct == 5:
         if "ocean blue" in (title or "").lower() or "ocean-blue" in (handle or "").lower():
+            return 0
+        if _is_kids(title, handle):
             return 0
     return pct
 
