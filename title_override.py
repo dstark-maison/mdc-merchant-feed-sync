@@ -19,7 +19,20 @@ facts already in the data -- no mapping tables, no English fabric text, nothing 
 """
 import re
 
-TITLE_OVERRIDE_APPLY = False  # False = compute + report only (dry run); True = the feed carries the new titles
+# Staged rollout: only these vendors' feed titles are replaced; every other vendor is computed + reported only.
+# Stage 1 (2026-11-25): RIBECO, MoST Blankets, SalesFever. Stage 2: "Coco & Cici" (after 24 h without new disapprovals).
+# VIVARAISE is unchanged by rule 7. Boomba Bamboo is HELD (bamboo->viscose relabel, EU 1007/2011): never overridden.
+APPLY_VENDORS = {"RIBECO", "MoST Blankets", "SalesFever"}
+HELD_VENDORS = {"Boomba Bamboo"}
+TITLE_OVERRIDE_APPLY = bool(APPLY_VENDORS)  # kept for callers/tests: False would mean pure dry run
+
+
+def applies_to(vendor):
+    return (vendor or "").strip() in APPLY_VENDORS and (vendor or "").strip() not in HELD_VENDORS
+
+# "Woll-Decke" -> "Wolldecke" etc. (feed titles only). Exactly these compounds, nothing broader.
+WOLL_COMPOUNDS = (("Woll-Bouclé-Decke", "Wollbouclé-Decke"), ("Woll-Überwurfdecke", "Wollüberwurfdecke"),
+                  ("Woll-Kuscheldecke", "Wollkuscheldecke"), ("Woll-Decke", "Wolldecke"))
 
 MAX_TITLE_LEN = 150
 FRONT_WINDOW = 70
@@ -83,7 +96,11 @@ def build_title(raw_title, current_title, vendor, brand, variant_size, product_t
     if not raw_title:
         return current_title, ["no-title"]
 
+    if vendor in HELD_VENDORS:
+        return current_title, ["held-boomba"]
     core = _strip_brand(raw_title, brand) if brand else raw_title
+    for old, new in WOLL_COMPOUNDS:
+        core = core.replace(old, new)
     title_size, core = normalise_dims(core)
     height = ""
     hm = HEIGHT_RE.search(core)
@@ -133,11 +150,11 @@ def write_report(records, path):
     """Audit CSV: item_id, brand, old_title, new_title, changed (y/n), flag. Sorted by brand, flagged rows first."""
     import csv
     from pathlib import Path
-    def real_flag(r):  # "unchanged-vivaraise-ok" is informational, not a problem
-        return [f for f in r["flag"].split(";") if f and f != "unchanged-vivaraise-ok"]
+    def real_flag(r):  # informational flags are not problems
+        return [f for f in r["flag"].split(";") if f and f not in ("unchanged-vivaraise-ok", "held-boomba")]
     rows = sorted(records, key=lambda r: (r["brand"].casefold(), 0 if real_flag(r) else 1, r["old_title"], r["item_id"]))
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=["item_id", "brand", "old_title", "new_title", "changed", "flag"])
+        w = csv.DictWriter(f, fieldnames=["item_id", "brand", "old_title", "new_title", "changed", "applied", "flag"])
         w.writeheader()
         w.writerows(rows)

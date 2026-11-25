@@ -14,7 +14,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-import build_feed  # noqa: E402
+import build_feed
+import pytest
+import title_override  # noqa: E402
 
 CONSUMER_VENDORS = ["Coco & Cici", "Boomba Bamboo", "MoST Blankets", "VIVARAISE"]
 WHITE_LABEL_VENDORS = ["Ángel Cerdá S.L.", "Orderchamp", "Maison de Cocon"]
@@ -364,3 +366,9 @@ def test_ribeco_offer_gets_shipping_columns_and_others_stay_empty(tmp_path, monk
 def test_feed_without_ribeco_has_no_shipping_columns(tmp_path, monkeypatch):
     stats, _ = _run(tmp_path, monkeypatch, [_offer("Coco & Cici", "X-1")], "noship")
     assert build_feed.SHIPPING_COLUMN not in open(stats["feed_csv_path"], encoding="utf-8").readline()
+
+
+@pytest.fixture(autouse=True)
+def _no_title_override(monkeypatch):
+    """These tests pin the brand-mapping titles; the staged DE title override has its own tests."""
+    monkeypatch.setattr(title_override, "APPLY_VENDORS", set())

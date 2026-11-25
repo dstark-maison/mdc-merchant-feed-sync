@@ -26,12 +26,12 @@ def test_height_kept_with_cm_after_size():
 
 def test_quoted_model_name_follows_size_and_title_size_moves():
     new, _ = t("Woll-Decke „Hunter“ 140 x 200", "MoST Blankets", "MoST Blankets", "")
-    assert new == "Woll-Decke 140x200 „Hunter“ – MoST Blankets"
+    assert new == "Wolldecke 140x200 „Hunter“ – MoST Blankets"
 
 
 def test_variant_size_wins_and_mismatch_is_flagged():
     new, flags = t("Woll-Decke „Hunter“ 140 x 200", "MoST Blankets", "MoST Blankets", "200 x 220 cm")
-    assert new == "Woll-Decke 200x220 „Hunter“ – MoST Blankets" and flags == ["size-mismatch:title=140x200"]
+    assert new == "Wolldecke 200x220 „Hunter“ – MoST Blankets" and flags == ["size-mismatch:title=140x200"]
 
 
 def test_salesfever_no_suffix_and_comma_split():
@@ -68,5 +68,19 @@ def test_max_150_keeps_head_size_brand():
 
 
 def test_brand_prefix_not_duplicated():
-    new, _ = t("Boomba Bamboo Spannbettlaken", "Boomba Bamboo", "Boomba Bamboo", "140×200 cm")
-    assert new == "Spannbettlaken 140x200 – Boomba Bamboo"
+    new, _ = t("MoST Blankets Wolldecke", "MoST Blankets", "MoST Blankets", "140×200 cm")
+    assert new == "Wolldecke 140x200 – MoST Blankets"
+
+
+def test_woll_compounds_normalised():
+    for raw, want in (("Woll-Überwurfdecke „Savana“ 200x220", "Wollüberwurfdecke 200x220 „Savana“"),
+                      ("Woll-Kuscheldecke Alba 140x200", "Wollkuscheldecke Alba 140x200"),
+                      ("Woll-Bouclé-Decke „Paris“ 140x200", "Wollbouclé-Decke 140x200 „Paris“")):
+        assert t(raw, "MoST Blankets", "MoST Blankets")[0] == want + " – MoST Blankets"
+
+
+def test_boomba_is_held_and_staged_apply():
+    cur = "Boomba Bamboo Bettbezug aus Bambus, Soft Taupe, 400TC"
+    assert t("Bettbezug aus Bambus, Soft Taupe, 400TC", "Boomba Bamboo", "Boomba Bamboo", "140×200", cur=cur) == (cur, ["held-boomba"])
+    assert to.applies_to("RIBECO") and to.applies_to("MoST Blankets") and to.applies_to("SalesFever")
+    assert not any(to.applies_to(v) for v in ("Boomba Bamboo", "VIVARAISE", "Coco & Cici", "Maison de Cocon"))

@@ -1204,8 +1204,9 @@ def run_pipeline(rows, out_basename, run_label, market="de", now=None):
                 raw_row.get("size", ""), raw_row.get("product_type", ""))
             title_records.append({"item_id": row.get("id", ""), "brand": row.get("brand", ""),
                                   "old_title": row.get("title", ""), "new_title": new_title,
-                                  "changed": "y" if new_title != row.get("title", "") else "n", "flag": ";".join(t_flags)})
-            if title_override.TITLE_OVERRIDE_APPLY:
+                                  "changed": "y" if new_title != row.get("title", "") else "n",
+                                  "applied": "y" if title_override.applies_to(row.get("vendor")) and new_title != row.get("title", "") else "n", "flag": ";".join(t_flags)})
+            if title_override.applies_to(row.get("vendor")):
                 row["title"] = new_title
         if is_unknown:
             label = row["vendor"] or "(empty vendor)"
