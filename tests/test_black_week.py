@@ -27,6 +27,9 @@ def berlin(*args):
     ("SalesFever", "Upholstered Bed", "x", 10),
     ("Coco & Cici", "Tencel Twill Duvet Cover White", "tencel-twill-duvet-cover-white", 5),
     ("Coco & Cici", "Bamboo Duvet Cover Ocean Blue", "bamboo-duvet-cover-ocean-blue", 0),
+    ("Coco & Cici", "Kids Tencel Twill Duvet Cover Beige", "kids-tencel-twill-duvet-cover-beige", 0),
+    # translated market feed: localized title, base handle still identifies a Kids product
+    ("Coco & Cici", "Tencel Twill Bettbezug für Kinder Beige", "kids-tencel-twill-duvet-cover-beige", 0),
     # translated market feed: localized title, base handle still identifies Ocean Blue
     ("Coco & Cici", "Bettbezug aus Bambus, Ozeanblau", "bamboo-duvet-cover-ocean-blue", 0),
     ("Boomba Bamboo", "Bamboo Bedding Set", "x", 0),
