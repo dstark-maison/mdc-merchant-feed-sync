@@ -1,3 +1,5 @@
 id,title,reason,category
 8720849140447-copy,Merino-Wolldecke 200x220 „Aegean“ – MoST Blankets,"manual exclusion rule (feed_exclusions.yaml): Duplicate of the standalone product merino-wool-bedspread-aegean-200-220 (same SKU 8720849140447-copy). Deleted on 2026-10-08; pre-emptive rule in case the Orderchamp sync recreates it, as it did for Hunter.",validation
 EB93869FBA8CC1FC-B,"Wollbouclé-Decke 140x200 „Paris Brown“, – Outlet – MoST Blankets",manual exclusion rule (feed_exclusions.yaml): outlet product (handle ends -outlet): excluded from GMC and idealo,validation
+8720849141451-B,"Wolldecke 140x200 „Rio Green“, – Outlet – MoST Blankets",manual exclusion rule (feed_exclusions.yaml): outlet product (handle ends -outlet): excluded from GMC and idealo,validation
+0793002340679-B,Wolldecke 200x220 „Cool Mint“ – Outlet – MoST Blankets,manual exclusion rule (feed_exclusions.yaml): outlet product (handle ends -outlet): excluded from GMC and idealo,validation
