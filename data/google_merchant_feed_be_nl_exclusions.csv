@@ -1,4 +1,4 @@
 id,title,reason,category
-8720849140447-copy,MoST Blankets Merinowollen plaid Aegean 140x200,"manual exclusion rule (feed_exclusions.yaml): Duplicate of the standalone product merino-wool-bedspread-aegean-200-220 (same SKU 8720849140447-copy). Deleted on 2026-10-08; pre-emptive rule in case the Orderchamp sync recreates it, as it did for Hunter.",validation
+8720849140447-copy,MoST Blankets Merinowollen plaid Aegean,"manual exclusion rule (feed_exclusions.yaml): Duplicate of the standalone product merino-wool-bedspread-aegean-200-220 (same SKU 8720849140447-copy). Deleted on 2026-10-08; pre-emptive rule in case the Orderchamp sync recreates it, as it did for Hunter.",validation
 EB93869FBA8CC1FC-B,"MoST Blankets Wollen bouclé-plaid, kleur Paris Brown, 140 x 200 – Outlet",manual exclusion rule (feed_exclusions.yaml): outlet product (handle ends -outlet): excluded from GMC and idealo,validation
 8720849141451-B,MoST Blankets Wollen plaid Rio Green 140x200 – Outlet,manual exclusion rule (feed_exclusions.yaml): outlet product (handle ends -outlet): excluded from GMC and idealo,validation
