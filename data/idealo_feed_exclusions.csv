@@ -2,22 +2,22 @@ id,title,reason,category
 8720849140447-copy,MoST Blankets Merino-Woll-Decke „Aegean“,"manual exclusion rule (feed_exclusions.yaml): Duplicate of the standalone product merino-wool-bedspread-aegean-200-220 (same SKU 8720849140447-copy). Deleted on 2026-10-08; pre-emptive rule in case the Orderchamp sync recreates it, as it did for Hunter.",validation
 EB93869FBA8CC1FC-B,"MoST Blankets Woll-Bouclé-Decke „Paris Brown“, 140 x 200 – Outlet",manual exclusion rule (feed_exclusions.yaml): outlet product (handle ends -outlet): excluded from GMC and idealo,validation
 8720849141451-B,"MoST Blankets Woll-Decke „Rio Green“, 140 x 200 – Outlet",manual exclusion rule (feed_exclusions.yaml): outlet product (handle ends -outlet): excluded from GMC and idealo,validation
+M12402207VS,Coco & Cici Bettbezug aus Tencel™-Twill – Weiß,availability out_of_stock,out_of_stock
 M12002007VS,Coco & Cici Bettbezug aus Tencel™-Twill – Weiß,availability out_of_stock,out_of_stock
 M12002207VS,Coco & Cici Bettbezug aus Tencel™-Twill – Weiß,availability out_of_stock,out_of_stock
-M12402207VS,Coco & Cici Bettbezug aus Tencel™-Twill – Weiß,availability out_of_stock,out_of_stock
 M12402202VS,Coco & Cici Bettbezug aus Tencel™-Twill – Beige,availability out_of_stock,out_of_stock
 M11402002VS,Coco & Cici Bettbezug aus Tencel™-Twill – Beige,availability out_of_stock,out_of_stock
 B12402206VS,Coco & Cici Viskose-Bettbezug in der Farbe „Powder Peach“,availability out_of_stock,out_of_stock
 TLB1420VS,Coco & Cici Bettbezug aus Tencel™-Twill in Lavendelblau,availability out_of_stock,out_of_stock
 TLB2022VS,Coco & Cici Bettbezug aus Tencel™-Twill in Lavendelblau,availability out_of_stock,out_of_stock
-TLB1422VS,Coco & Cici Bettbezug aus Tencel™-Twill in Lavendelblau,availability out_of_stock,out_of_stock
 TLB2020VS,Coco & Cici Bettbezug aus Tencel™-Twill in Lavendelblau,availability out_of_stock,out_of_stock
+TLB1422VS,Coco & Cici Bettbezug aus Tencel™-Twill in Lavendelblau,availability out_of_stock,out_of_stock
 TDR2622VS,Coco & Cici Bettbezug aus Tencel™-Twill in der Farbe „Dusty Rose“,availability out_of_stock,out_of_stock
 M12002208VS,"Coco & Cici Bettbezug aus Tencel™-Twill, olivgrün",availability out_of_stock,out_of_stock
-M12002008VS,"Coco & Cici Bettbezug aus Tencel™-Twill, olivgrün",availability out_of_stock,out_of_stock
-M11402208VS,"Coco & Cici Bettbezug aus Tencel™-Twill, olivgrün",availability out_of_stock,out_of_stock
 M11402008VS,"Coco & Cici Bettbezug aus Tencel™-Twill, olivgrün",availability out_of_stock,out_of_stock
+M11402208VS,"Coco & Cici Bettbezug aus Tencel™-Twill, olivgrün",availability out_of_stock,out_of_stock
 M12402208VS,"Coco & Cici Bettbezug aus Tencel™-Twill, olivgrün",availability out_of_stock,out_of_stock
+M12002008VS,"Coco & Cici Bettbezug aus Tencel™-Twill, olivgrün",availability out_of_stock,out_of_stock
 TOY2020VS,Coco & Cici Bettbezug aus Tencel™-Twill in Ockergelb,availability out_of_stock,out_of_stock
 TOY1422VS,Coco & Cici Bettbezug aus Tencel™-Twill in Ockergelb,availability out_of_stock,out_of_stock
 SPW2020VS,"Coco & Cici Bettbezug aus Tencel™-Satin, pfirsichfarben-weiß",availability out_of_stock,out_of_stock
@@ -31,8 +31,8 @@ TLB67,Coco & Cici Kissenbezug aus Tencel™-Twill in Lavendelblau,availability o
 TLB56,Coco & Cici Kissenbezug aus Tencel™-Twill in Lavendelblau,availability out_of_stock,out_of_stock
 TLB57NB,Coco & Cici Kissenbezug aus Tencel™-Twill in Lavendelblau,availability out_of_stock,out_of_stock
 SWS56,"Coco & Cici Kissenbezug aus Tencel™-Satin, „White Sand“",availability out_of_stock,out_of_stock
-12002005VS,"Coco & Cici Bettbezug aus Tencel™-Satin, cremefarben",availability out_of_stock,out_of_stock
 11402205VS,"Coco & Cici Bettbezug aus Tencel™-Satin, cremefarben",availability out_of_stock,out_of_stock
+12002005VS,"Coco & Cici Bettbezug aus Tencel™-Satin, cremefarben",availability out_of_stock,out_of_stock
 11402005VS,"Coco & Cici Bettbezug aus Tencel™-Satin, cremefarben",availability out_of_stock,out_of_stock
 8720849141895,MoST Blankets Woll-Decke „Manoria Acqua“ – mehrfarbig in Blau,availability out_of_stock,out_of_stock
 8720849141444,"MoST Blankets Woll-Decke „Rio“ in Beige, 140 x 200",availability out_of_stock,out_of_stock
@@ -88,6 +88,6 @@ TMPSETL08,Coco & Cici TENCEL™ Pyjama-Set lang Damen Dunkelblau,availability ou
 396995,"Polsterbett aus rosa Samt, 90×200",availability out_of_stock,out_of_stock
 8720849140515,MoST Blankets Wollkuscheldecke Wild Pigeon,availability out_of_stock,out_of_stock
 4240220S,Coco & Cici Tencel™ Sommerbettdecke,availability out_of_stock,out_of_stock
-4260220S,Coco & Cici Tencel™ Sommerbettdecke,availability out_of_stock,out_of_stock
 4200220S,Coco & Cici Tencel™ Sommerbettdecke,availability out_of_stock,out_of_stock
+4260220S,Coco & Cici Tencel™ Sommerbettdecke,availability out_of_stock,out_of_stock
 6192970999,TopCool Matratzenauflage,availability out_of_stock,out_of_stock
